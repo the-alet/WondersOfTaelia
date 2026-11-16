@@ -15,6 +15,7 @@
 #include "render/atmosphere.h"
 #include "render/cloud_renderer.h"
 #include "render/magic_renderer.h"
+#include "render/rune_renderer.h"
 #include "taelia/sim/sky.h"
 #include "rhi/rhi.h"
 #include "taelia/sim/math.h"
@@ -50,6 +51,7 @@ struct RenderView {
     uint64_t frame = 0;
     const std::vector<BallPose>* balls = nullptr;  // thrown balls to draw (World::ballPoses)
     const MagicField* magic = nullptr;              // the magic field (World::magic)
+    const std::vector<Rune>* runes = nullptr;       // the runes in the world (World::runes)
     dvec3 campfire;                                 // the campfire's bed
     double campfireStrength = 0;                    // 0: out, 1: as it starts
     double rain = 0, storm = 0;                     // the weather over the camera
@@ -99,6 +101,7 @@ private:
     GrassRenderer grass_;
     BallRenderer balls_;
     HumanRenderer human_;
+    RuneRenderer runes_;
     ManifestRenderer manifest_;
     MagicBallRenderer magicBalls_;
     AtmosphereRenderer atmosphere_;

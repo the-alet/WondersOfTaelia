@@ -83,6 +83,24 @@ bool parseFlags(int argc, wchar_t** argv, LaunchFlags& f, std::string& error) {
                 if (name == names[n]) aspect = n;
             if (aspect < 0 || !toList(val.substr(comma + 1), list) || list.size() != 4 || list[3] <= 0) return bad();
             f.injects.push_back({aspect, list[0], list[1], list[2], list[3]});
+        } else if (key == "--rune") {
+            // aspect,material,x,y,z,kg/m3[,yaw]: the aspect and material by name, then where it stands and how full.
+            static const char* const names[] = {"earth", "water", "life", "fire", "air", "lightning", "light", "neutral", "necrotic"};
+            static const char* const mats[] = {"wood", "stone", "metal"};
+            const size_t comma = val.find(',');
+            if (comma == std::string::npos) return bad();
+            const std::string name = val.substr(0, comma);
+            int aspect = -1, material = -1;
+            for (int n = 0; n < int(std::size(names)); ++n)
+                if (name == names[n]) aspect = n;
+            const std::string rest = val.substr(comma + 1);
+            const size_t comma2 = rest.find(',');
+            if (aspect < 0 || comma2 == std::string::npos) return bad();
+            const std::string mat = rest.substr(0, comma2);
+            for (int m = 0; m < int(std::size(mats)); ++m)
+                if (mat == mats[m]) material = m;
+            if (material < 0 || !toList(rest.substr(comma2 + 1), list) || list.size() < 4 || list.size() > 5 || list[3] < 0) return bad();
+            f.runes.push_back({aspect, material, list[0], list[1], list[2], list[3], list.size() == 5 ? list[4] : 0.0});
         } else if (key == "--throws") {
             if (!toDouble(val, d) || d < 0) return bad();
             f.throws = int(d);

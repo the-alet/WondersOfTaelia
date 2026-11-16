@@ -19,6 +19,35 @@ double Rune::seal() const {
 
 double Rune::breakPoint() const { return k::RUNE_BREAK * seal(); }
 
+RuneCarrier runeCarrier(const Rune& r) {
+    const double s = r.size;
+    double width, thick, above, round;
+    switch (r.material) {
+        case RuneMaterial::Wood:  // a hewn post
+            width = 1.3 * s, thick = std::max(0.10, 0.35 * s), above = 0.75 * s, round = 0.02;
+            break;
+        case RuneMaterial::Metal:  // a cast plate on its edge
+            width = 1.2 * s, thick = 0.04, above = 0.70 * s, round = 0.008;
+            break;
+        default:  // a standing stone
+            width = 1.5 * s, thick = std::max(0.18, 0.5 * s), above = 0.85 * s, round = 0.05;
+            break;
+    }
+    dvec3 n{r.normal.x, 0.0, r.normal.z};
+    n = length(n) > 1e-6 ? normalize(n) : dvec3{0, 0, 1};
+    const double top = r.position.y + above;
+    const double bottom = std::min(r.ground - 0.15, r.position.y - 0.6 * s);  // set into the ground
+    RuneCarrier c;
+    c.yaw = std::atan2(n.x, n.z);
+    c.half = {0.5 * width, 0.5 * (top - bottom), 0.5 * thick};
+    c.centre = {r.position.x - n.x * c.half.z, 0.5 * (top + bottom), r.position.z - n.z * c.half.z};
+    c.rounding = std::min(round, 0.45 * std::min(c.half.x, c.half.z));
+    c.signY = r.position.y - c.centre.y;
+    return c;
+}
+
+Aspect runeCarrierAspect(RuneMaterial m) { return m == RuneMaterial::Wood ? Aspect::Life : Aspect::Earth; }
+
 double Rune::mass() const {
     double m = 0;
     for (const double c : contents) m += c;

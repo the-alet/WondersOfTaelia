@@ -8,6 +8,7 @@
 #pragma once
 #include <cstdint>
 
+#include "taelia/shared_constants.h"
 #include "taelia/sim/magic.h"
 #include "taelia/sim/magic_kinetics.h"
 #include "taelia/sim/math.h"
@@ -24,6 +25,8 @@ struct Rune {
     dvec3 normal{0, 0, 1};   // the way it faces: its jet leaves that way
     double size = 0.5;       // m across
     double contents[kAspects] = {};  // kg of each aspect inside
+    double ground = 0;       // the ground under its sign (the world sets it): its carrier stands there
+    double held = k::MAGIC_HELD;  // what its carrier holds of its material's aspect (kg/m3); it falls apart below its share's 5%
     bool broken = false;
 
     double volume() const;      // m3: 0.5 m across holds about 0.1 m3
@@ -32,6 +35,19 @@ struct Rune {
     double mass() const;        // kg inside
     double density() const;     // kg/m3 inside
 };
+
+// What a rune is carved on: a block set into the ground with the sign on its front: a standing stone, a hewn wooden
+// post, a cast metal plate. One shape for the physics (a box), the renderers and every front end.
+struct RuneCarrier {
+    dvec3 centre;            // the middle of the block
+    dvec3 half;              // half its width (x), height (y) and thickness (z), in its own frame
+    double yaw = 0;          // its front (+z) faces along the sign's normal (radians, +z turned toward +x)
+    double rounding = 0.02;  // m: how round its edges are
+    double signY = 0;        // the sign's centre above the block's middle (m); the sign is on its front face
+};
+RuneCarrier runeCarrier(const Rune& r);
+// The aspect a carrier's material holds: stone and metal earth, wood life.
+Aspect runeCarrierAspect(RuneMaterial m);
 
 // One fixed step of a rune with the field round it: what it draws in, what leaks over its seal, whether it breaks
 // (then everything has gone out into the field and it is marked broken).

@@ -28,6 +28,14 @@ struct LaunchFlags {
         double x = 0, y = 0, z = 0, kg = 0;
     };
     std::vector<Injection> injects;
+    // --rune=aspect,material,x,y,z,kg/m3[,yaw] (repeatable, checks only): stand a rune's carrier there (y is the sign's
+    // centre above the ground; kg/m3 is how dense its aspect is inside at the start, 0 empty; yaw degrees, its front
+    // faces along it). No key does this; SPEC: ask before putting one in the world.
+    struct RuneFlag {
+        int aspect = 0, material = 2;  // stone by default
+        double x = 0, y = 0, z = 0, kg = 0, yawDeg = 0;
+    };
+    std::vector<RuneFlag> runes;
     int frames = 0;                    // --frames=N: automated run
     std::string shot = "shot.png";     // --shot=<file>
     std::optional<std::string> api;    // --api=d3d12|vulkan (else the saved setting)

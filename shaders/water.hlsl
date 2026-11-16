@@ -105,6 +105,7 @@ float3 reflectedScene(float3 origin, float3 R, out float hitT) {
     const bool land = q.CommittedInstanceID() == TERRAIN_INSTANCE;
     float3 base = land ? float3(0.065, 0.085, 0.035) : float3(0.030, 0.055, 0.020);
     if (q.CommittedInstanceID() == HUMAN_INSTANCE) base = float3(0.09, 0.11, 0.12);  // the human: its shirt, mostly
+    if (q.CommittedInstanceID() == RUNE_INSTANCE) base = float3(0.095, 0.095, 0.09);  // a rune's block, dark stone or wood
     float3 sunsUp = 0;
     [unroll] for (uint s = 0; s < 2; ++s)
         sunsUp += g_frame.sunLight[s].rgb * (1.0 - g_frame.suns[s].w) * sunTransmittance(g_frame.suns[s].xyz) * saturate(g_frame.suns[s].y);

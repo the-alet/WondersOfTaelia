@@ -101,10 +101,16 @@ void World::step() {
     }
     magic_->step(clock_.steps());
     burnPlants();
-    // Runes: what they draw in, what leaks over their seals; the burst ones are gone.
-    for (Rune& r : runes_) stepRune(r, *magic_, WorldClock::stepSeconds());
+    // Runes: what they draw in, what leaks over their seals; what their carriers hold evens out with the magic round
+    // them, and a carrier falling apart breaks its rune; the burst ones are gone.
+    for (Rune& r : runes_) {
+        stepRune(r, *magic_, WorldClock::stepSeconds());
+        if (r.broken) continue;
+        r.held = magic::heldAfter(r.held, magic_->sample(runeCarrier(r).centre).rho.total(), WorldClock::stepSeconds());
+        if (magic::fallsApart(r.held)) breakRune(r, *magic_);
+    }
     stepMagicBalls();
-    std::erase_if(runes_, [](const Rune& r) { return r.broken; });
+    dropBrokenRunes();
     // What each ball holds evens out with the magic around it; in a void it falls apart. A ball is pure life magic:
     // necrotic magic it takes up eats its life (growing by MAGIC_NECROTIC_GAIN of it), and when it falls apart it
     // crumbles to dust, its necrotic magic going out into the field.
@@ -276,7 +282,12 @@ void World::stepPlayer() {
     treesInArea(terrain_, p.x - 4.0, p.z - 4.0, p.x + 4.0, p.z + 4.0, trees);
     const PlayerMode was = player_.mode;
     const double fall = -player_.velocity.y;
-    taelia::stepPlayer(player_, input_, terrain_, trees, dt);
+    std::vector<PlayerObstacle> blocks;
+    for (const Rune& r : runes_) {
+        const RuneCarrier c = runeCarrier(r);
+        if (std::hypot(c.centre.x - p.x, c.centre.z - p.z) < 6.0) blocks.push_back({c.centre, c.half, c.yaw});
+    }
+    taelia::stepPlayer(player_, input_, terrain_, trees, blocks, dt);
     // A hard landing presses its feet into soft ground (its legs take most of it).
     if (was == PlayerMode::Air && player_.mode == PlayerMode::Ground && fall > 3.0) {
         const double energy = 0.5 * k::HUMAN_MASS * fall * fall * k::LANDING_PLASTIC;
@@ -361,10 +372,23 @@ void World::stepMagicBalls() {
             burst(b, {to.x, s.waterLevel + 0.3, to.z});
             continue;
         }
+        // A rune's carrier stops it.
+        bool hit = false;
+        for (const Rune& rn : runes_) {
+            const RuneCarrier c = runeCarrier(rn);
+            const double cs = std::cos(c.yaw), sn = std::sin(c.yaw);
+            const dvec3 d = to - c.centre;
+            const double lx = d.x * cs - d.z * sn, lz = d.x * sn + d.z * cs;
+            if (std::fabs(lx) < c.half.x + r && std::fabs(d.y) < c.half.y + r && std::fabs(lz) < c.half.z + r) {
+                burst(b, from);
+                hit = true;
+                break;
+            }
+        }
+        if (hit) continue;
         std::vector<TreeInstance> trees;
         treesInArea(terrain_, std::min(from.x, to.x) - 2.0, std::min(from.z, to.z) - 2.0, std::max(from.x, to.x) + 2.0,
                     std::max(from.z, to.z) + 2.0, trees);
-        bool hit = false;
         for (const TreeInstance& t : trees) {
             if (to.y > t.position.y + 6.0 * t.scale || to.y < t.position.y) continue;
             // Closest approach of the step to the trunk's axis (in plan).
@@ -419,6 +443,9 @@ void World::crumble(const dvec3& at, double radius, double necroticKg) {
 uint32_t World::addRune(Rune r) {
     r.id = nextRune_++;
     r.broken = false;
+    r.ground = terrain_.height(r.position.x, r.position.z);
+    const RuneCarrier c = runeCarrier(r);
+    physics_->addBox(r.id, c.centre, c.half, c.yaw, r.material == RuneMaterial::Wood);
     runes_.push_back(r);
     return r.id;
 }
@@ -426,6 +453,12 @@ uint32_t World::addRune(Rune r) {
 void World::damageRune(uint32_t id) {
     for (Rune& r : runes_)
         if (r.id == id) breakRune(r, *magic_);
+    dropBrokenRunes();
+}
+
+void World::dropBrokenRunes() {
+    for (const Rune& r : runes_)
+        if (r.broken) physics_->removeBox(r.id);
     std::erase_if(runes_, [](const Rune& r) { return r.broken; });
 }
 
@@ -476,7 +509,7 @@ uint64_t World::stateHash() const {
     h = hashCombine(h, bits(gathering_.kg));
     for (const MagicBall& b : magicBalls_) h = hashCombine(hashCombine(h, b.id), bits(b.position.x));
     for (const Rune& r : runes_) {
-        h = hashCombine(h, r.id);
+        h = hashCombine(hashCombine(h, r.id), bits(r.held));
         for (const double c : r.contents) h = hashCombine(h, bits(c));
     }
     for (const Manifestation& m : magic_->manifestations()) h = hashCombine(hashCombine(h, m.id), bits(m.held));

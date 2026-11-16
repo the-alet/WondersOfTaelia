@@ -76,6 +76,10 @@ public:
     // body (kinematic: balls bounce off it, it is not pushed).
     void addCapsule(uint32_t id, const dvec3& centre, double radius, double halfHeight);
     void moveCapsule(uint32_t id, const dvec3& centre);
+    // A block standing still (a rune's carrier): half sizes in its frame, turned by yaw about y; wood springs like
+    // bark, stone and metal are rock to a ball.
+    void addBox(uint32_t id, const dvec3& centre, const dvec3& half, double yaw, bool wood);
+    void removeBox(uint32_t id);
     // The magic at a point: its total density and velocity (past the effect threshold dense magic drags things along)
     // and its share of air magic (moving air magic makes the wind).
     using MagicSampler = std::function<void(const dvec3& p, double& rhoTotal, dvec3& velocity, double& airShare)>;

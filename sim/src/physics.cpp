@@ -145,6 +145,7 @@ Physics::Impl::~Impl() {
     }
     for (auto& [id, r] : rocks) r->release();
     for (auto& [id, c] : capsules) c->release();
+    for (auto& [id, b] : boxes) b->release();
     if (flatGround) flatGround->release();
     scene->release();
     dispatcher->release();
@@ -568,6 +569,29 @@ void Physics::addCapsule(uint32_t id, const dvec3& centre, double radius, double
     shape->setRestOffset(0.0f);
     m.scene->addActor(*body);
     m.capsules[id] = body;
+}
+
+void Physics::addBox(uint32_t id, const dvec3& centre, const dvec3& half, double yaw, bool wood) {
+    Impl& m = *impl_;
+    if (m.boxes.count(id)) return;
+    if (!m.originSet) {
+        m.origin = originNear(centre);
+        m.originSet = true;
+    }
+    PxRigidStatic* box = m.px->createRigidStatic(PxTransform(toPx(centre - m.origin), PxQuat(float(yaw), PxVec3(0.0f, 1.0f, 0.0f))));
+    PxShape* shape = PxRigidActorExt::createExclusiveShape(*box, PxBoxGeometry(float(half.x), float(half.y), float(half.z)),
+                                                           wood ? *m.barkMaterial : *m.surfaces[kRock]);
+    shape->setContactOffset(0.02f);
+    shape->setRestOffset(0.0f);
+    m.scene->addActor(*box);
+    m.boxes[id] = box;
+}
+
+void Physics::removeBox(uint32_t id) {
+    const auto it = impl_->boxes.find(id);
+    if (it == impl_->boxes.end()) return;
+    it->second->release();
+    impl_->boxes.erase(it);
 }
 
 void Physics::moveCapsule(uint32_t id, const dvec3& centre) {

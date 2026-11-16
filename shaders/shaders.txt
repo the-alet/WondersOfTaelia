@@ -54,3 +54,5 @@ magic_ball.hlsl PSMain      ps_6_6
 magic_ball.hlsl DustVS      vs_6_6
 magic_ball.hlsl DustPS      ps_6_6
 weather.hlsl    CSMain      cs_6_6
+rune.hlsl       VSMain      vs_6_6
+rune.hlsl       PSMain      ps_6_6

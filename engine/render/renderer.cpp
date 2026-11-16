@@ -142,6 +142,7 @@ bool Renderer::init(rhi::Device* device, const Terrain* terrain, const CloudMap*
     if (!grass_.init(device_, detail, error)) return false;
     if (!balls_.init(device_, detail, error)) return false;
     if (!human_.init(device_, error)) return false;
+    if (!runes_.init(device_, error)) return false;
     if (!manifest_.init(device_, error)) return false;
     if (!magicBalls_.init(device_, error)) return false;
     if (!atmosphere_.init(device_, error) || !cloudRenderer_.init(device_, clouds, error)) return false;
@@ -174,6 +175,7 @@ void Renderer::shutdown() {
     grass_.shutdown();
     balls_.shutdown();
     human_.shutdown();
+    runes_.shutdown();
     manifest_.shutdown();
     magicBalls_.shutdown();
     atmosphere_.shutdown();
@@ -588,6 +590,7 @@ void Renderer::render(rhi::CommandList* cmd, rhi::Texture* output, const RenderV
         human_.update(v.humanFeet, v.humanYaw, v.humanHeld, v.humanWater, v.humanMotion, v.humanFirstPerson, v.cameraPos, frustum,
                       v.waitForStreaming);
     magicBalls_.update(v.magicBalls, v.dust, v.cameraPos);
+    runes_.update(v.runes, v.cameraPos, frustum);
     if (std::vector<rhi::Texture*> fresh = human_.takeTexturesNeedingMips(); !fresh.empty()) {
         cmd->beginMarker("human textures");
         cmd->setPipeline(downsample_.get());
@@ -630,6 +633,7 @@ void Renderer::render(rhi::CommandList* cmd, rhi::Texture* output, const RenderV
     grass_.draw(cmd, fc);
     balls_.draw(cmd, fc);
     if (v.human) human_.draw(cmd, fc);
+    runes_.draw(cmd, fc);
     manifest_.draw(cmd, fc);
     cmd->endRenderPass();
     cmd->endMarker();
@@ -754,11 +758,13 @@ void Renderer::buildScene(rhi::CommandList* cmd, const rhi::Transient& fc) {
     trees_.buildStructures(cmd, leafSrv);
     balls_.buildStructures(cmd);
     human_.buildStructures(cmd);
+    runes_.buildStructures(cmd);
     manifest_.buildStructures(cmd);
     instances_.clear();
     terrain_.addInstances(instances_);
     balls_.addInstances(instances_);  // before the trees, so a full table never drops them
     human_.addInstances(instances_);  // only once it has been placed (update)
+    runes_.addInstances(instances_);
     manifest_.addInstances(instances_);
     trees_.addInstances(instances_, 350.0);
     if (instances_.empty()) return;

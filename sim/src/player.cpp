@@ -37,7 +37,8 @@ Trunk trunkOf(const TreeInstance& t) {
 
 }  // namespace
 
-void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const std::vector<TreeInstance>& trees, double dt) {
+void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const std::vector<TreeInstance>& trees,
+                const std::vector<PlayerObstacle>& blocks, double dt) {
     const dvec3 fwd{std::sin(in.yaw), 0, std::cos(in.yaw)}, right{std::cos(in.yaw), 0, -std::sin(in.yaw)};
     dvec3 wish = fwd * in.forward + right * in.right;
     if (length(wish) > 1.0) wish = normalize(wish);
@@ -127,6 +128,34 @@ void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const 
         if (into < 0) {
             p.velocity.x -= nrm.x * into;
             p.velocity.z -= nrm.z * into;
+        }
+    }
+    // Blocks: out of each to the nearest side (in its own frame), sliding along it.
+    for (const PlayerObstacle& b : blocks) {
+        if (next.y > b.centre.y + b.half.y || next.y + 1.8 < b.centre.y - b.half.y) continue;
+        const double c = std::cos(b.yaw), s = std::sin(b.yaw);
+        const double dx = next.x - b.centre.x, dz = next.z - b.centre.z;
+        const double lx = dx * c - dz * s, lz = dx * s + dz * c;  // into its frame (+z its front)
+        const double qx = std::clamp(lx, -b.half.x, b.half.x), qz = std::clamp(lz, -b.half.z, b.half.z);
+        double ox = lx - qx, oz = lz - qz, dist = std::hypot(ox, oz);
+        if (dist >= k::PLAYER_RADIUS) continue;
+        if (dist < 1e-9) {  // inside: out through the nearest side
+            const double ex = b.half.x - std::fabs(lx), ez = b.half.z - std::fabs(lz);
+            if (ex < ez) ox = lx >= 0 ? 1.0 : -1.0, oz = 0.0;
+            else ox = 0.0, oz = lz >= 0 ? 1.0 : -1.0;
+            dist = 0.0;
+        } else {
+            ox /= dist;
+            oz /= dist;
+        }
+        const double px = qx + ox * k::PLAYER_RADIUS, pz = qz + oz * k::PLAYER_RADIUS;
+        next.x = b.centre.x + px * c + pz * s;
+        next.z = b.centre.z - px * s + pz * c;
+        const double nx = ox * c + oz * s, nz = -ox * s + oz * c;  // the push, back in the world
+        const double into = p.velocity.x * nx + p.velocity.z * nz;
+        if (into < 0) {
+            p.velocity.x -= nx * into;
+            p.velocity.z -= nz * into;
         }
     }
     const TerrainSample at = terrain.sample(next.x, next.z);

@@ -7,6 +7,7 @@
 #pragma once
 #include <cstdint>
 
+#include "taelia/shared_constants.h"
 #include "taelia/sim/magic.h"
 #include "taelia/sim/magic_kinetics.h"
 #include "taelia/sim/math.h"
@@ -26,6 +27,8 @@ struct Rune {
     dvec3 normal{0, 0, 1};   // the way it faces: its jet leaves that way
     double size = 0.5;       // m across
     double contents[kAspects] = {};  // kg of each aspect inside
+    double ground = 0;       // the ground under its sign (the world sets it): its carrier stands there
+    double held = k::MAGIC_HELD;  // what its carrier holds of its material's aspect (kg/m3); it falls apart below its share's 5%
     bool broken = false;
     bool drawing = false;
     double drawProgress = 1.0, overcharge = 0.0;
@@ -37,8 +40,6 @@ struct Rune {
     double density() const;     // kg/m3 inside
 };
 
-<<<<<<< Updated upstream
-=======
 // What a rune is carved on: a block set into the ground with the sign on its front: a standing stone, a hewn wooden
 // post, a cast metal plate. One shape for the physics (a box), the renderers and every front end.
 struct RuneCarrier {
@@ -57,7 +58,6 @@ Aspect runeCarrierAspect(RuneMaterial m);
 // Orthonormal frame of a sign, including signs on horizontal/sloped surfaces.
 void runeBasis(const dvec3& normal, dvec3& right, dvec3& up);
 
->>>>>>> Stashed changes
 // One fixed step of a rune with the field round it: what it draws in, what leaks over its seal, whether it breaks
 // (then everything has gone out into the field and it is marked broken).
 void stepRune(Rune& r, MagicField& field, double dt);

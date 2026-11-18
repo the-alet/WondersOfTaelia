@@ -28,8 +28,6 @@ struct LaunchFlags {
         double x = 0, y = 0, z = 0, kg = 0;
     };
     std::vector<Injection> injects;
-<<<<<<< Updated upstream
-=======
     struct MagicShot { int aspect; double x, y, z, kg, vx, vy, vz; uint64_t frame; };
     std::vector<MagicShot> magicShots; // automated checks only, height above terrain/water
     // --rune=aspect,material,x,y,z,kg/m3[,yaw] (repeatable, checks only): stand a rune's carrier there (y is the sign's
@@ -40,7 +38,6 @@ struct LaunchFlags {
         double x = 0, y = 0, z = 0, kg = 0, yawDeg = 0;
     };
     std::vector<RuneFlag> runes;
->>>>>>> Stashed changes
     int frames = 0;                    // --frames=N: automated run
     std::string shot = "shot.png";     // --shot=<file>
     std::optional<std::string> api;    // --api=d3d12|vulkan (else the saved setting)

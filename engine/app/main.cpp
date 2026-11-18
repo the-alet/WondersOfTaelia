@@ -107,6 +107,7 @@ private:
     uint64_t frame_ = 0;
     bool charging_ = false;
     bool injected_ = false;
+    bool runesAdded_ = false;
     std::chrono::steady_clock::time_point chargeStart_;
     uint32_t chargingRune_ = 0;
     double runeChargeSeconds_ = 0.0;
@@ -263,6 +264,7 @@ RenderView App::makeView(double aspect, double realSeconds) const {
     v.frame = frame_;
     v.balls = &ballPoses_;
     v.magic = &world_->magic();
+    v.runes = &world_->runes();
     v.campfire = world_->campfireCore() - dvec3{0, 0.4, 0};
     v.campfireStrength = world_->campfireStrength();
     for (const World::Glow& s : world_->steam()) v.steam.push_back({s.position, s.strength});
@@ -445,6 +447,19 @@ int App::run(const LaunchFlags& f) {
                 world_->magic().addDensity({in.x, base + in.y, in.z}, Aspect(in.aspect), in.kg);
             }
             injected_ = true;
+        }
+        // --rune: a rune's carrier for checks, once the field runs (its ground and box the World sets).
+        if (!runesAdded_ && world_->magic().started()) {
+            for (const LaunchFlags::RuneFlag& rf : f.runes) {
+                Rune r;
+                r.aspect = Aspect(rf.aspect);
+                r.material = RuneMaterial(rf.material);
+                r.position = {rf.x, world_->groundHeight(rf.x, rf.z) + (rf.y > 0 ? rf.y : 0.4 * r.size), rf.z};
+                r.normal = {std::sin(rf.yawDeg * kDegToRad), 0.0, std::cos(rf.yawDeg * kDegToRad)};
+                if (rf.kg > 0) r.contents[rf.aspect] = rf.kg * r.volume();
+                world_->addRune(r);
+            }
+            runesAdded_ = true;
         }
         // The look first: the player's moves are relative to it (the free camera of the checks flies with the keys).
         {

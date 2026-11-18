@@ -31,6 +31,12 @@ struct PlayerInput {
 
 enum class PlayerMode : uint8_t { Ground, Air, Swim, Fly };
 
+// A block it cannot walk through (a rune's carrier): its middle, half sizes in its frame, turned by yaw about y.
+struct PlayerObstacle {
+    dvec3 centre, half;
+    double yaw = 0;
+};
+
 struct Player {
     dvec3 position;         // its feet on the ground; swimming, the point of the surface it floats at
     dvec3 velocity;         // m/s
@@ -49,7 +55,8 @@ struct Player {
 
 // One fixed step: moves it over the terrain (walking up and down slopes, falling off edges, swimming where the water is
 // deeper than PLAYER_SWIM_DEPTH, flying), keeps it out of tree trunks, eases its pose weights. `trees`: the trees near it.
-void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const std::vector<TreeInstance>& trees, double dt);
+void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const std::vector<TreeInstance>& trees,
+                const std::vector<PlayerObstacle>& blocks, double dt);
 // Its human's motion now (for the pose; `seconds`: simulated time). `ball`: how full the ball it gathers is (0..1).
 HumanMotion playerMotion(const Player& p, double seconds, double ball);
 // Where it looks from (its eyes, world space) and the third-person camera behind its shoulder looking along (yaw,

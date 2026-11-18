@@ -104,12 +104,6 @@ void World::step() {
     }
     magic_->step(clock_.steps());
     burnPlants();
-<<<<<<< Updated upstream
-    // Runes: what they draw in, what leaks over their seals; the burst ones are gone.
-    for (Rune& r : runes_) stepRune(r, *magic_, WorldClock::stepSeconds());
-    stepMagicBalls();
-    std::erase_if(runes_, [](const Rune& r) { return r.broken; });
-=======
     stepTreeRecovery();
     // Runes: what they draw in, what leaks over their seals; what their carriers hold evens out with the magic round
     // them, and a carrier falling apart breaks its rune; the burst ones are gone.
@@ -123,7 +117,6 @@ void World::step() {
     stepMagicBalls();
     stepPhysicalManifestations();
     dropBrokenRunes();
->>>>>>> Stashed changes
     // What each ball holds evens out with the magic around it; in a void it falls apart. A ball is pure life magic:
     // necrotic magic it takes up eats its life (growing by MAGIC_NECROTIC_GAIN of it), and when it falls apart it
     // crumbles to dust, its necrotic magic going out into the field.
@@ -314,9 +307,6 @@ void World::stepPlayer() {
     treesInArea(terrain_, p.x - 4.0, p.z - 4.0, p.x + 4.0, p.z + 4.0, trees);
     const PlayerMode was = player_.mode;
     const double fall = -player_.velocity.y;
-<<<<<<< Updated upstream
-    taelia::stepPlayer(player_, input_, terrain_, trees, dt);
-=======
     std::vector<PlayerObstacle> blocks;
     for (const Rune& r : runes_) {
         if (r.placement != RunePlacement::Carrier) continue;
@@ -324,7 +314,6 @@ void World::stepPlayer() {
         if (std::hypot(c.centre.x - p.x, c.centre.z - p.z) < 6.0) blocks.push_back({c.centre, c.half, c.yaw});
     }
     taelia::stepPlayer(player_, input_, terrain_, trees, blocks, dt);
->>>>>>> Stashed changes
     // A hard landing presses its feet into soft ground (its legs take most of it).
     if (was == PlayerMode::Air && player_.mode == PlayerMode::Ground && fall > 3.0) {
         const double energy = 0.5 * k::HUMAN_MASS * fall * fall * k::LANDING_PLASTIC;
@@ -429,41 +418,6 @@ void World::stepMagicBalls() {
         }
         gathering_ = MagicBall{};
     }
-<<<<<<< Updated upstream
-    // Flying: straight (magic is weightless) until it hits the ground, water or a trunk, or has gone its range.
-    for (MagicBall& b : magicBalls_) {
-        const dvec3 from = b.position, to = from + b.velocity * dt;
-        const double r = b.radius();
-        b.travelled += length(to - from);
-        const TerrainSample s = terrain_.sample(to.x, to.z);
-        if (to.y - r <= s.height) {
-            burst(b, {to.x, std::max(to.y, s.height + 0.3), to.z});
-            continue;
-        }
-        if (s.underwater() && to.y - r <= s.waterLevel) {
-            burst(b, {to.x, s.waterLevel + 0.3, to.z});
-            continue;
-        }
-        std::vector<TreeInstance> trees;
-        treesInArea(terrain_, std::min(from.x, to.x) - 2.0, std::min(from.z, to.z) - 2.0, std::max(from.x, to.x) + 2.0,
-                    std::max(from.z, to.z) + 2.0, trees);
-        bool hit = false;
-        for (const TreeInstance& t : trees) {
-            if (to.y > t.position.y + 6.0 * t.scale || to.y < t.position.y) continue;
-            // Closest approach of the step to the trunk's axis (in plan).
-            const double ax = to.x - from.x, az = to.z - from.z, len2 = ax * ax + az * az;
-            const double u = len2 > 1e-12 ? std::clamp(((t.position.x - from.x) * ax + (t.position.z - from.z) * az) / len2, 0.0, 1.0) : 0.0;
-            const double cx = from.x + ax * u - t.position.x, cz = from.z + az * u - t.position.z;
-            if (cx * cx + cz * cz < (0.35 * t.scale + r) * (0.35 * t.scale + r)) {
-                burst(b, from);
-                hit = true;
-                break;
-            }
-        }
-        if (hit) continue;
-        b.position = to;
-        if (b.travelled > k::MAGIC_BALL_RANGE) burst(b, to);
-=======
     // Opposed coherent packets neutralize where their swept volumes first overlap, unless a surface blocks them.
     for (size_t i=0;i<magicBalls_.size();++i) for(size_t j=i+1;j<magicBalls_.size();++j) {
         MagicBall& a=magicBalls_[i]; MagicBall& b=magicBalls_[j];
@@ -478,7 +432,6 @@ void World::stepMagicBalls() {
         const double canceled=std::min(a.kg,b.kg);
         a.kg-=canceled; b.kg-=canceled;
         magic_->addMovingMass((pa+pb)*0.5,Aspect::Neutral,2*canceled,(a.velocity+b.velocity)*0.5);
->>>>>>> Stashed changes
     }
     // Sweep to the first contact or exhaustion point. Loss depends on distance, never the frame count.
     for (MagicBall& b : magicBalls_) {
@@ -583,13 +536,10 @@ void World::crumble(const dvec3& at, double radius, double necroticKg) {
 uint32_t World::addRune(Rune r) {
     r.id = nextRune_++;
     r.broken = false;
-<<<<<<< Updated upstream
-=======
     r.ground = terrain_.height(r.position.x, r.position.z);
     const RuneCarrier c = runeCarrier(r);
     if (r.placement == RunePlacement::Carrier)
         physics_->addBox(r.id, c.centre, c.half, c.yaw, r.material == RuneMaterial::Wood);
->>>>>>> Stashed changes
     runes_.push_back(r);
     return r.id;
 }
@@ -597,8 +547,6 @@ uint32_t World::addRune(Rune r) {
 void World::damageRune(uint32_t id) {
     for (Rune& r : runes_)
         if (r.id == id) breakRune(r, *magic_);
-<<<<<<< Updated upstream
-=======
     dropBrokenRunes();
 }
 
@@ -610,7 +558,6 @@ void World::dropBrokenRunes() {
         }
     for (const Rune& r : runes_)
         if (r.broken && r.placement == RunePlacement::Carrier) physics_->removeBox(r.id);
->>>>>>> Stashed changes
     std::erase_if(runes_, [](const Rune& r) { return r.broken; });
 }
 
@@ -687,15 +634,11 @@ uint64_t World::stateHash() const {
             h = hashCombine(h, bits(value));
     }
     for (const Rune& r : runes_) {
-<<<<<<< Updated upstream
-        h = hashCombine(h, r.id);
-=======
         h = hashCombine(hashCombine(h, r.id), bits(r.held));
         h = hashCombine(hashCombine(h, uint64_t(r.placement)), r.support);
         h = hashCombine(hashCombine(h, uint64_t(r.drawing)), uint64_t(r.aspect));
         for (const double value : {r.position.x, r.position.y, r.position.z, r.normal.x, r.normal.y, r.normal.z, r.drawProgress, r.overcharge})
             h = hashCombine(h, bits(value));
->>>>>>> Stashed changes
         for (const double c : r.contents) h = hashCombine(h, bits(c));
     }
     for (const Manifestation& m : magic_->manifestations()) h = hashCombine(hashCombine(h, m.id), bits(m.held));

@@ -37,7 +37,8 @@ Trunk trunkOf(const TreeInstance& t) {
 
 }  // namespace
 
-void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const std::vector<TreeInstance>& trees, double dt) {
+void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const std::vector<TreeInstance>& trees,
+                const std::vector<PlayerObstacle>& blocks, double dt) {
     const dvec3 fwd{std::sin(in.yaw), 0, std::cos(in.yaw)}, right{std::cos(in.yaw), 0, -std::sin(in.yaw)};
     dvec3 wish = fwd * in.forward + right * in.right;
     if (length(wish) > 1.0) wish = normalize(wish);
@@ -129,8 +130,6 @@ void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const 
             p.velocity.z -= nrm.z * into;
         }
     }
-<<<<<<< Updated upstream
-=======
     // Blocks: out of each to the nearest side (in its own frame), sliding along it.
     for (const PlayerObstacle& b : blocks) {
         if (next.y > b.centre.y + b.half.y || next.y + 1.8 < b.centre.y - b.half.y) continue;
@@ -165,7 +164,6 @@ void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const 
             p.velocity.z -= nz * into;
         }
     }
->>>>>>> Stashed changes
     const TerrainSample at = terrain.sample(next.x, next.z);
     const double depth = at.underwater() ? at.waterLevel - at.height : 0.0;
     switch (p.mode) {

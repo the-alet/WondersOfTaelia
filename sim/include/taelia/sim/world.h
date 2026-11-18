@@ -210,6 +210,7 @@ private:
     std::vector<Impact> impacts_;
     // A thing of pure life magic crumbles: dust where it was, its necrotic magic out into the field.
     void crumble(const dvec3& at, double radius, double necroticKg);
+    void dropBrokenRunes();  // and their carriers' colliders
     MagicBall gathering_;
     std::vector<MagicBall> magicBalls_;
     std::vector<MagicImpact> magicImpacts_;

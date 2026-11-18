@@ -83,8 +83,6 @@ bool parseFlags(int argc, wchar_t** argv, LaunchFlags& f, std::string& error) {
                 if (name == names[n]) aspect = n;
             if (aspect < 0 || aspect == 5 || !toList(val.substr(comma + 1), list) || list.size() != 4 || list[3] <= 0) return bad();
             f.injects.push_back({aspect, list[0], list[1], list[2], list[3]});
-<<<<<<< Updated upstream
-=======
         } else if (key == "--magic-shot") {
             static const char* const names[] = {"earth","water","life","fire","air","lightning","light","neutral","necrotic"};
             const size_t comma = val.find(',');
@@ -114,7 +112,6 @@ bool parseFlags(int argc, wchar_t** argv, LaunchFlags& f, std::string& error) {
                 if (mat == mats[m]) material = m;
             if (material < 0 || !toList(rest.substr(comma2 + 1), list) || list.size() < 4 || list.size() > 5 || list[3] < 0) return bad();
             f.runes.push_back({aspect, material, list[0], list[1], list[2], list[3], list.size() == 5 ? list[4] : 0.0});
->>>>>>> Stashed changes
         } else if (key == "--throws") {
             if (!toDouble(val, d) || d < 0) return bad();
             f.throws = int(d);

@@ -20,8 +20,6 @@ double Rune::seal() const {
 
 double Rune::breakPoint() const { return k::RUNE_BREAK * seal(); }
 
-<<<<<<< Updated upstream
-=======
 RuneCarrier runeCarrier(const Rune& r) {
     const double s = r.size;
     double width, thick, above, round;
@@ -80,7 +78,6 @@ bool sweepRuneCarrier(const RuneCarrier& c, const dvec3& from, const dvec3& to, 
     return true;
 }
 
->>>>>>> Stashed changes
 double Rune::mass() const {
     double m = 0;
     for (const double c : contents) m += c;

@@ -23,8 +23,9 @@ Ground grassGround(float2 uv) {
     float streaks = smoothstep(0.1, 0.6, fbmP(uv, int2(96, 24), 3, 0.55, 13u));  // flattened dead blades
     Ground g;
     float3 soil = float3(0.105, 0.080, 0.052), green = float3(0.070, 0.095, 0.038), dry = float3(0.19, 0.16, 0.085);
-    g.albedo = lerp(soil, green, smoothstep(-0.35, 0.35, patches));
-    g.albedo = lerp(g.albedo, dry, streaks * 0.55) * (0.85 + 0.3 * (fine * 0.5 + 0.5));
+    // Soil and decomposing plant fibres beneath actual blades, with exposed fine grains.
+    g.albedo = lerp(soil * 0.82, green, smoothstep(-0.1, 0.4, patches) * 0.35);
+    g.albedo = lerp(g.albedo, dry, streaks * 0.32) * (0.78 + 0.44 * (fine * 0.5 + 0.5));
     g.height = saturate(0.5 + 0.25 * patches + 0.15 * fine + 0.2 * streaks);
     g.rough = 0.9;
     g.ao = 0.75 + 0.25 * g.height;
@@ -34,11 +35,12 @@ Ground grassGround(float2 uv) {
 Ground dirt(float2 uv) {
     float n = fbmP(uv, int2(8, 8), 5, 0.5, 21u);
     float3 w = worleyP(uv, 40, 22u);
-    float pebble = smoothstep(0.32, 0.15, w.x) * step(0.86, w.z);  // small, scattered stones
+    float pebble = (1.0 - smoothstep(0.12, 0.34, w.x)) * smoothstep(0.68,0.92,w.z);
+    float grain = fbmP(uv,int2(128,128),2,0.5,23u);
     Ground g;
-    g.albedo = float3(0.155, 0.115, 0.075) * (0.8 + 0.3 * (n * 0.5 + 0.5));
+    g.albedo = float3(0.125, 0.092, 0.061) * (0.78 + 0.35 * (n * 0.5 + 0.5) + 0.12 * grain);
     g.albedo = lerp(g.albedo, float3(0.16, 0.145, 0.12) * (0.7 + 0.4 * w.z), pebble);
-    g.height = saturate(0.3 + 0.2 * n + pebble * (0.4 + 0.3 * w.z));
+    g.height = saturate(0.3 + 0.16 * n + pebble * (0.28 + 0.2 * w.z) + 0.06 * grain);
     g.rough = lerp(0.88, 0.65, pebble);
     g.ao = 0.7 + 0.3 * g.height;
     return g;

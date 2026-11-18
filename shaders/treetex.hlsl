@@ -100,9 +100,11 @@ Tex leaves(float2 uv, uint kind) {
         const float rib = 1.0 - smoothstep(0.0, 0.08, abs(across));
         float3 green = kind == 0 ? float3(0.19, 0.27, 0.07) : (kind == 1 ? float3(0.075, 0.15, 0.04) : float3(0.045, 0.10, 0.065));
         green *= 0.8 + 0.4 * r2;
-        t.albedo = lerp(green, green * 1.35 + 0.02, rib * 0.6);
+        const float veins = pow(saturate(1.0-abs(sin((s*11.0-abs(across)*1.7)*3.14159))*9.0),2.0);
+        const float edgeShade = 1.0-0.12*pow(abs(across),3.0);
+        t.albedo = lerp(green, green * 1.2 + 0.008, max(rib*0.45,veins*0.13)) * edgeShade;
         t.height = 1;
-        t.rough = kind == 2 ? 0.6 : 0.45;
+        t.rough = (kind == 2 ? 0.62 : 0.54) + 0.08*r2;
         t.extra = kind == 2 ? 0.3 : 0.65;
         t.slope = float2(-dir.y, dir.x) * across * 0.5;  // leaves curve away from the midrib
     }
@@ -137,7 +139,7 @@ void BladeMain(uint3 id : SV_DispatchThreadID) {
     const uint w = g_push.size, h = g_push.kind;  // here: width, height
     if (id.x >= w || id.y >= h) return;
     const float2 uv = (float2(id.xy) + 0.5) / float2(w, h);
-    const float3 base = float3(0.045, 0.07, 0.02), mid = float3(0.08, 0.14, 0.03), tip = float3(0.14, 0.155, 0.05);
+    const float3 base = float3(0.024, 0.043, 0.013), mid = float3(0.058, 0.115, 0.027), tip = float3(0.10, 0.13, 0.044);
     float3 c = uv.y < 0.5 ? lerp(base, mid, uv.y * 2.0) : lerp(mid, tip, (uv.y - 0.5) * 2.0);
     const float veins = 0.5 + 0.5 * sin(uv.x * 3.14159 * 7.0);
     c *= 0.9 + 0.15 * veins;

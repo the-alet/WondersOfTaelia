@@ -17,6 +17,7 @@
 #include "taelia/sim/plants.h"
 #include "taelia/sim/player.h"
 #include "taelia/sim/rune.h"
+#include "taelia/sim/interaction.h"
 #include "taelia/sim/terrain.h"
 #include "taelia/sim/wind.h"
 
@@ -37,8 +38,26 @@ struct MagicBall {
     dvec3 position, velocity;
     double kg = 0;          // the magic it holds
     double travelled = 0;   // m since thrown
+    double fullHold = 0;
+    bool manifested = false;
+    double instability() const { return std::clamp((fullHold - k::BALL_OVERCHARGE_GRACE) / k::BALL_OVERCHARGE_SECONDS, 0.0, 1.0); }
     double fill() const { return std::min(kg / double(k::MAGIC_BALL_FULL), 1.0); }
     double radius() const { return k::MAGIC_BALL_RADIUS * std::cbrt(std::max(fill(), 0.04)); }
+};
+
+struct PhysicalManifest {
+    Aspect aspect = Aspect::Fire;
+    dvec3 position, velocity;
+    double radius = 0.06, age = 0, kg = 1;
+    bool settled = false;
+};
+
+struct MagicImpact {
+    dvec3 position;
+    Aspect aspect = Aspect::Neutral;
+    double radius = 0.2, age = 0;
+    uint32_t id = 0;
+    dvec3 normal{0,1,0};
 };
 
 struct WorldDesc {
@@ -98,16 +117,21 @@ public:
     struct BurningTree {
         dvec3 position;
         double strength = 0, burnt = 0;
+        dvec3 firePosition;
     };
     const std::vector<Glow>& steam() const { return steam_; }
     std::vector<BurningTree> burningTrees() const;
     const std::set<std::pair<int64_t, int64_t>>& burntTrees() const { return burnt_; }
+    const std::vector<MagicImpact>& magicImpacts() const { return magicImpacts_; }
     const std::vector<Glow>& scorches() const { return scorches_; }  // strength: radius (m)
     const dvec3& focus() const { return focus_; }
     // The human (step 6), standing near the spawn point facing it: its feet, which way it faces (radians, +z turned
     // toward +x), and the life magic it holds (kg/m3), which evens out with the magic round it like any object's.
     // Runes (step 7): none in the world yet (the user decides where one goes); tests and checks add them.
     uint32_t addRune(Rune r);
+    uint32_t drawRune(const dvec3& eye, const dvec3& gaze, Aspect aspect);
+    void chargeRune(uint32_t id, double heldSeconds, bool finished);
+    bool traceEnvironment(const dvec3& from, const dvec3& to, double radius, SurfaceHit& hit) const;
     const std::vector<Rune>& runes() const { return runes_; }
     void damageRune(uint32_t id);  // its sign damaged: everything comes out at once
     // The human is the player (the user): what the keys and the mouse ask for (held keys as they are, pressed ones taken
@@ -139,9 +163,12 @@ public:
     // Magic balls: the one gathering between its hands (kg 0: none), the ones thrown and flying.
     const MagicBall& gathering() const { return gathering_; }
     const std::vector<MagicBall>& magicBalls() const { return magicBalls_; }
+    // Front ends and deterministic checks launch through the same charged-packet path.
+    uint32_t throwMagicBall(const dvec3& from, const dvec3& velocity, Aspect aspect, double kg);
+    const std::vector<PhysicalManifest>& physicalManifestations() const { return physical_; }
     // The campfire: where its core of fire magic sits, and how strongly it burns (1 as it starts).
     dvec3 campfireCore() const { return terrain_.campfirePosition() + dvec3{0, 0.4, 0}; }
-    double campfireStrength() const { return fire_; }
+    double campfireStrength() const { return fire_ + fireBoost_; }
     // What a ball holds of its own aspect (life), kg/m3; it falls apart below MAGIC_FALL_APART of MAGIC_HELD.
     double ballHeld(uint32_t id) const {
         const auto it = held_.find(id);
@@ -170,7 +197,7 @@ private:
     std::unique_ptr<Physics> physics_;
     std::unique_ptr<MagicField> magic_;
     dvec3 focus_{};
-    double fire_ = 1.0;
+    double fire_ = 1.0, fireBoost_ = 0;
     std::map<uint32_t, double> held_;  // balls' held magic
     std::vector<Rune> runes_;
     uint32_t nextRune_ = 1;
@@ -185,18 +212,31 @@ private:
     void crumble(const dvec3& at, double radius, double necroticKg);
     MagicBall gathering_;
     std::vector<MagicBall> magicBalls_;
+    std::vector<MagicImpact> magicImpacts_;
+    std::vector<PhysicalManifest> physical_;
+    bool gatherBlocked_ = false;
     uint32_t nextMagicBall_ = 1;
     void stepPlayer();
     void stepMagicBalls();
     void burst(MagicBall& b, const dvec3& at);
+    void magicContact(MagicBall& b, const SurfaceHit& hit, bool magicPacket = true);
+    void heatContact(const HotSpot& h);
+    void manifestFullBall();
+    void stepPhysicalManifestations();
+    void restoreTrees(const dvec3& position, double& lifeKg);
+    void stepTreeRecovery();
     std::set<uint32_t> rocks_;         // minerals already rock to the physics
     std::vector<Strike> strikes_;
     struct Burning {
         TreeInstance tree;
         double until = 0;
+        dvec3 ignition;
+        double height = 0;
     };
     std::map<std::pair<int64_t, int64_t>, Burning> burning_;
     std::set<std::pair<int64_t, int64_t>> burnt_;
+    struct TreeRecovery { TreeInstance tree; double stored = 0, growth = 0; };
+    std::map<std::pair<int64_t, int64_t>, TreeRecovery> recovering_;
     std::vector<Glow> scorches_, steam_;
     void burnPlants();
 };

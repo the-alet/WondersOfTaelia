@@ -51,6 +51,30 @@ float D_GGX(float NoH, float a) {
     return a2 / (3.14159265 * d * d);
 }
 
+// Local creases and contact under roots, blades and stones. Reject sky and distant silhouettes to avoid dark halos.
+float contactAmbient(float3 rel, float3 normal, float2 uv) {
+    const float distance = length(rel);
+    if (distance > 100.0) return 1.0;
+    const float radius = 0.65;
+    const float viewDepth = max(dot(rel,g_frame.cameraForward.xyz),0.1);
+    const float pixels = clamp(radius*g_push.height/(2.0*g_frame.cameraForward.w*viewDepth),1.0,48.0);
+    const float2 directions[4] = {float2(0.9239,0.3827),float2(-0.3827,0.9239),float2(-0.9239,-0.3827),float2(0.3827,-0.9239)};
+    float occlusion = 0;
+    [unroll] for(uint ring=0;ring<2;++ring) [unroll] for(uint j=0;j<4;++j) {
+        const float2 sampleUv = uv + directions[j] * pixels * (ring==0?0.3:0.85) / float2(g_push.width,g_push.height);
+        if(any(sampleUv<=0) || any(sampleUv>=1)) continue;
+        const float z = g_tex2D[g_push.depth].SampleLevel(s_pointClamp,sampleUv,0).r;
+        if(z<=0) continue;
+        const float3 ray = viewRay(sampleUv);
+        const float3 sampleRel = ray * (g_frame.cameraUp.w/z) / max(dot(ray,g_frame.cameraForward.xyz),0.01);
+        const float3 delta = sampleRel-rel;
+        const float separation = length(delta);
+        const float horizon = saturate((dot(normal,delta)/max(separation,0.01)-0.08)*2.0);
+        occlusion += horizon * saturate(1.0-separation/radius) * smoothstep(0.015,0.06,separation);
+    }
+    return 1.0-saturate(occlusion/8.0*2.5)*0.65;
+}
+
 [numthreads(8, 8, 1)]
 void CSMain(uint3 id : SV_DispatchThreadID) {
     if (id.x >= g_push.width || id.y >= g_push.height) return;
@@ -82,6 +106,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             ao = 1.0;
         } else {
             albedo = necroticTint(albedo, necrotic);
+            ao *= contactAmbient(rel,n,uv);
         }
         const float3 V = -dir;
 
@@ -100,7 +125,9 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             const float3 H = normalize(L + V);
             const float NoH = saturate(dot(n, H)), VoH = saturate(dot(V, H));
             const float F = 0.04 + 0.96 * pow(1.0 - VoH, 5.0);
-            glint += sun * saturate(NoL) * D_GGX(NoH, rough * rough) * F * 0.25 / max(saturate(dot(n, V)) * saturate(NoL), 0.1);
+            const float nv=max(saturate(dot(n,V)),0.001), nl=saturate(NoL), a2=pow(rough,4.0);
+            const float visibility=0.5/max(nl*sqrt(nv*nv*(1.0-a2)+a2)+nv*sqrt(nl*nl*(1.0-a2)+a2),0.001);
+            glint += sun * nl * D_GGX(NoH, rough * rough) * F * visibility;
         }
         // The campfire's flickering light, shadowed.
         const float3 fl = fireLight(rel, n);
@@ -118,7 +145,7 @@ void CSMain(uint3 id : SV_DispatchThreadID) {
             // Seen from under a pond's surface: lit by the daylight the water above lets through, seen through the
             // water between (the straight line from the eye stays under the surface).
             const float depthHere = waterSurfaceAbove() - rel.y;
-            color = throughWater(color * waterDepthLight(depthHere) * waterCaustics(rel, depthHere), dist, waterSurfaceAbove() - rel.y * 0.5);
+            color = throughWater(color * waterDepthLight(depthHere), dist, waterSurfaceAbove() - rel.y * 0.5);
         } else {
             color = aerialPerspective(color, rel);
         }

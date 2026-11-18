@@ -1,6 +1,4 @@
-// Runes (step 7): closed vessels of magic. The tests SPEC.md asks for: below the seal the field round it stays the
-// same; it draws in only its aspect (or neutral) past the dew point; the leak grows with the excess (and is faster for
-// lighter motes); a break releases everything; a fire rune past 675 stays fire inside and comes out as lightning.
+// Runes: regulation to half capacity, selective intake, effusion, rupture and physical carriers.
 #include "taelia/shared_constants.h"
 #include "taelia/sim/rune.h"
 #include "taelia/sim/world.h"
@@ -50,31 +48,87 @@ TEST(rune_is_half_a_metre_and_its_seal_is_by_material) {
     CHECK_NEAR(r.breakPoint(), 1350.0, 1e-9);
 }
 
-TEST(rune_below_its_seal_leaves_the_field_alone) {
+TEST(rune_carriers_stand_in_the_ground_and_face_the_sign_normal) {
+    for (const RuneMaterial material : {RuneMaterial::Wood, RuneMaterial::Stone, RuneMaterial::Metal}) {
+        Rune r;
+        r.size = 0.5;
+        r.ground = 12.0;
+        r.position = {3.0, 12.4, -5.0};
+        r.normal = normalize(dvec3{0.6, 0.0, 0.8});
+        r.material = material;
+        const RuneCarrier c = runeCarrier(r);
+        const dvec3 front = c.centre + dvec3{std::sin(c.yaw) * c.half.z, 0, std::cos(c.yaw) * c.half.z};
+        CHECK_NEAR(front.x, r.position.x, 1e-9);
+        CHECK_NEAR(front.z, r.position.z, 1e-9);
+        CHECK(c.centre.y - c.half.y < r.ground);  // set into the ground
+        CHECK(c.centre.y + c.half.y > r.ground + 0.5);
+        CHECK(c.half.x > 0 && c.half.y > 0 && c.half.z > 0);
+        CHECK_NEAR(c.signY, r.position.y - c.centre.y, 1e-9);
+    }
+    CHECK(runeCarrierAspect(RuneMaterial::Wood) == Aspect::Life);
+    CHECK(runeCarrierAspect(RuneMaterial::Stone) == Aspect::Earth);
+    CHECK(runeCarrierAspect(RuneMaterial::Metal) == Aspect::Earth);
+}
+
+TEST(a_stone_rune_carrier_stops_a_ball_and_breaking_it_removes_the_collider) {
+    WorldDesc d;
+    World w(d);
+    const dvec3 p = openSpot(w);
+    Rune r = runeAt(p, Aspect::Fire, RuneMaterial::Stone, 0.0);
+    const uint32_t id = w.addRune(r);
+    const RuneCarrier c = runeCarrier(w.runes().front());
+    const dvec3 from{c.centre.x, c.centre.y, c.centre.z + c.half.z + 1.5};
+    w.throwBall(from, {0, 0, -8});
+    bool bounced = false, passed = false;
+    for (int i = 0; i < 60 && !w.balls().empty(); ++i) {
+        w.step();
+        const Ball& ball = w.balls().front();
+        if (ball.position.z > c.centre.z + c.half.z + 0.1 && ball.velocity.z > 0.5) bounced = true;
+        if (ball.position.z < c.centre.z - c.half.z - 0.1) passed = true;
+    }
+    CHECK(bounced);
+    CHECK(!passed);
+    w.damageRune(id);
+    CHECK(w.runes().empty());
+    const uint32_t removedColliderBallId = w.throwBall(from, {0, 0, -8});
+    bool crossedBehindOldCarrier = false;
+    for (int i = 0; i < 60 && !crossedBehindOldCarrier; ++i) {
+        w.step();
+        for (const Ball& ball : w.balls()) {
+            if (ball.id == removedColliderBallId && ball.position.z < c.centre.z - c.half.z - 0.1) {
+                crossedBehindOldCarrier = true;
+                break;
+            }
+        }
+    }
+    CHECK(crossedBehindOldCarrier);
+}
+
+TEST(rune_at_half_capacity_leaves_the_field_alone) {
     WorldDesc d;
     World plain(d), withRune(d);
     const dvec3 p = openSpot(plain);
     openSpot(withRune);
-    withRune.addRune(runeAt(p, Aspect::Fire, RuneMaterial::Stone, 400.0));  // dense, but under its seal
+    withRune.addRune(runeAt(p, Aspect::Fire, RuneMaterial::Stone, 300.0));
     for (int i = 0; i < 120; ++i) {
         plain.step();
         withRune.step();
     }
     CHECK(plain.magic().stateHash() == withRune.magic().stateHash());  // to the field it does not exist
     CHECK(withRune.runes().size() == 1);
-    CHECK_NEAR(withRune.runes().front().density(), 400.0, 1e-9);  // nothing faded, nothing changed inside
+    CHECK_NEAR(withRune.runes().front().density(), 300.0, 1e-9);
 }
 
-TEST(rune_draws_in_only_its_aspect_or_neutral_past_the_dew_point) {
+TEST(rune_draws_available_matching_or_neutral_magic_even_below_dew_point) {
     WorldDesc d;
     {
         World w(d);
         const dvec3 p = openSpot(w);
         w.addRune(runeAt(p, Aspect::Fire, RuneMaterial::Stone, 0.0));
         w.magic().addDensity(p, Aspect::Water, 90.0);  // another aspect passes by
-        w.magic().addDensity(p, Aspect::Fire, 20.0);   // its own, but under the dew point
+        w.magic().addDensity(p, Aspect::Fire, 20.0);   // regulation can use thin matching magic too
         for (int i = 0; i < 2; ++i) w.step();
-        CHECK(w.runes().front().mass() == 0.0);
+        CHECK(w.runes().front().mass() > 0.0);
         w.magic().addDensity(p, Aspect::Fire, 90.0);   // its own past the dew point
         for (int i = 0; i < 2; ++i) w.step();
         CHECK(w.runes().front().contents[int(Aspect::Fire)] > 0.0);
@@ -106,7 +160,7 @@ TEST(rune_leaks_more_the_further_over_its_seal) {
     };
     const double little = leakOf(Aspect::Fire, 660.0), more = leakOf(Aspect::Fire, 780.0);
     CHECK(little > 0.0 && more > 1.5 * little);
-    CHECK(leakOf(Aspect::Fire, 590.0) == 0.0);  // under the seal nothing leaks
+    CHECK(leakOf(Aspect::Fire, 590.0) < little);  // regulation below the seal, plus effusion above it
     // The lighter the motes, the sooner it vents (Graham).
     CHECK(leakOf(Aspect::Light, 700.0) > leakOf(Aspect::Earth, 700.0));
 }
@@ -129,18 +183,19 @@ TEST(rune_breaks_past_its_break_point_releasing_everything) {
     CHECK_NEAR(fieldMass(w) - before2, 300.0 * 0.1, 0.03);
 }
 
-TEST(fire_rune_past_675_stays_fire_inside_and_comes_out_as_lightning) {
+TEST(fire_rune_keeps_fire_while_the_derived_lightning_aspect_is_disabled) {
     WorldDesc d;
     World w(d);
     const dvec3 p = openSpot(w);
     const uint32_t id = w.addRune(runeAt(p, Aspect::Fire, RuneMaterial::Metal, 700.0));
     for (int i = 0; i < 60; ++i) w.step();
-    CHECK_NEAR(w.runes().front().contents[int(Aspect::Fire)], 70.0, 1e-5);  // no change under pressure inside
+    const double held = w.runes().front().contents[int(Aspect::Fire)];
+    CHECK(held > 45.0 && held < 70.0); // regulates toward half the metal seal without pressure conversion
     CHECK(w.runes().front().contents[int(Aspect::Lightning)] == 0.0);
     const double fire = w.magic().totalMass(Aspect::Fire), lightning = w.magic().totalMass(Aspect::Lightning);
     w.damageRune(id);
-    CHECK_NEAR(w.magic().totalMass(Aspect::Lightning) - lightning, 70.0, 0.1);
-    CHECK_NEAR(w.magic().totalMass(Aspect::Fire), fire, 0.1);
+    CHECK_NEAR(w.magic().totalMass(Aspect::Lightning), lightning, 0.1);
+    CHECK_NEAR(w.magic().totalMass(Aspect::Fire) - fire, held, 0.1);
     CHECK(runeOutflowAspect(Aspect::Fire, 600.0) == Aspect::Fire);
-    CHECK(runeOutflowAspect(Aspect::Fire, 1200.0) == Aspect::Light);
+    CHECK(runeOutflowAspect(Aspect::Fire, 1200.0) == Aspect::Fire);
 }

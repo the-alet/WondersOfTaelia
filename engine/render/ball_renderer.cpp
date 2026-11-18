@@ -38,8 +38,8 @@ bool BallRenderer::init(rhi::Device* device, int detail, std::string* error) {
     for (int i = 0; i < stacks; ++i)
         for (int j = 0; j < slices; ++j) {
             const uint32_t a = uint32_t(i * (slices + 1) + j), b = a + 1, c = a + uint32_t(slices) + 1, d = c + 1;
-            if (i > 0) idx.insert(idx.end(), {a, c, b});
-            if (i < stacks - 1) idx.insert(idx.end(), {b, c, d});
+            if (i > 0) idx.insert(idx.end(), {a, b, c});
+            if (i < stacks - 1) idx.insert(idx.end(), {b, d, c});
         }
     vertexCount_ = uint32_t(verts.size() / 3);
     indexCount_ = uint32_t(idx.size());
@@ -51,7 +51,7 @@ bool BallRenderer::init(rhi::Device* device, int detail, std::string* error) {
     d.vs = "ball.VSMain";
     d.ps = "ball.PSMain";
     gbuffer::fillFormats(d);
-    d.cull = rhi::Cull::None;
+    d.cull = rhi::Cull::Back;
     d.name = "balls";
     pipe_ = device_->createGraphicsPipeline(d, error);
     prev_.clear();

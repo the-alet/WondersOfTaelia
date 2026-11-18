@@ -247,6 +247,19 @@ bool D3D12Device::init(const DeviceDesc& desc, std::string* error) {
     if (!ring_ || !zeroConstants_ || !ring_->mapped() || !zeroConstants_->mapped())
         return fail("upload ring allocation", E_OUTOFMEMORY);
     std::memset(zeroConstants_->mapped(), 0, kFrameConstantBytes);
+    if (!desc.gpuProfile.empty()) {
+        if (!profile_.open(desc.gpuProfile)) return fail("open GPU profile CSV", E_FAIL);
+        hr = queue->GetTimestampFrequency(&timestampFrequency_);
+        if (FAILED(hr) || !timestampFrequency_) return fail("GetTimestampFrequency", FAILED(hr) ? hr : E_FAIL);
+        const D3D12_QUERY_HEAP_DESC qhd{D3D12_QUERY_HEAP_TYPE_TIMESTAMP, GpuProfile::kQueries, 0};
+        for (uint32_t i = 0; i < kFramesInFlight; ++i) {
+            hr = device->CreateQueryHeap(&qhd, IID_PPV_ARGS(&queries_[i]));
+            if (FAILED(hr)) return fail("CreateQueryHeap", hr);
+            queryReadback_[i] = createBuffer({GpuProfile::kQueries * sizeof(uint64_t), BufferUsage::CopyDst,
+                                              Memory::Readback, "GPU timestamps"}, nullptr);
+            if (!queryReadback_[i] || !queryReadback_[i]->mapped()) return fail("GPU timestamp readback", E_FAIL);
+        }
+    }
     return true;
 }
 
@@ -333,6 +346,7 @@ D3D12Device::~D3D12Device() {
     slActive = false;
     ring_.reset();
     zeroConstants_.reset();
+    for (auto& rb : queryReadback_) rb.reset();
     collectGarbage(true);
     if (infoQueue_ && callbackCookie_) infoQueue_->UnregisterMessageCallback(callbackCookie_);
     cmd_.cl4.Reset();
@@ -383,10 +397,15 @@ void D3D12Device::endImmediate() {
 CommandList* D3D12Device::beginFrame(Swapchain* swapchain) {
     const uint32_t slot = uint32_t(frameNumber_ % kFramesInFlight);
     waitFence(frameFence_[slot]);
+    collectProfile(slot);
     collectGarbage(false);
     frameAlloc_[slot]->Reset();
     ID3D12GraphicsCommandList* cl = cmd_.cl.Get();
     cl->Reset(frameAlloc_[slot].Get(), nullptr);
+    if (profile_.enabled()) {
+        profile_.reset(slot, frameNumber_);
+        cl->EndQuery(queries_[slot].Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0);
+    }
     cmd_.pipeline = nullptr;
     ringBase_ = kRingBytesPerFrame * slot;
     ringOffset_ = 0;
@@ -403,6 +422,12 @@ void D3D12Device::endFrame(Swapchain* swapchain) {
     const uint32_t slot = uint32_t(frameNumber_ % kFramesInFlight);
     auto* sc = static_cast<D3D12Swapchain*>(swapchain);
     if (sc) transition(cmd_.cl.Get(), static_cast<D3D12Texture*>(sc->backbuffer()), State::Present);
+    if (profile_.enabled()) {
+        cmd_.cl->EndQuery(queries_[slot].Get(), D3D12_QUERY_TYPE_TIMESTAMP, 1);
+        cmd_.cl->ResolveQueryData(queries_[slot].Get(), D3D12_QUERY_TYPE_TIMESTAMP, 0, profile_.count(slot),
+                                 static_cast<D3D12Buffer*>(queryReadback_[slot].get())->res, 0);
+        profile_.submitted(slot);
+    }
     cmd_.cl->Close();
     ID3D12CommandList* lists[] = {cmd_.cl.Get()};
     queue->ExecuteCommandLists(1, lists);
@@ -424,6 +449,12 @@ void D3D12Device::waitIdle() {
     queue->Signal(fence.Get(), ++fenceValue);
     waitFence(fenceValue);
     if (!inFrame_) collectGarbage(false);
+    if (!inFrame_) for (uint32_t i = 0; i < kFramesInFlight; ++i) collectProfile(i);
+}
+
+void D3D12Device::collectProfile(uint32_t slot) {
+    if (profile_.pending(slot))
+        profile_.collect(slot, static_cast<const uint64_t*>(queryReadback_[slot]->mapped()), 1000.0 / double(timestampFrequency_));
 }
 
 Transient D3D12Device::allocTransient(uint64_t size) {

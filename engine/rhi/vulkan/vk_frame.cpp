@@ -16,12 +16,14 @@ VulkanDevice::~VulkanDevice() {
         return;
     }
     vkDeviceWaitIdle(device);
+    for (uint32_t i = 0; i < kFramesInFlight; ++i) collectProfile(i);
     slUnload(this);  // before anything is destroyed, once the GPU is idle
     ring_.reset();
     for (auto& fn : pendingGarbage_) fn();
     pendingGarbage_.clear();
     collectGarbage(true);
     for (auto& f : frames_) {
+        if (f.queries) vkDestroyQueryPool(device, f.queries, nullptr);
         if (f.pool) vkDestroyCommandPool(device, f.pool, nullptr);
         if (f.acquire) vkDestroySemaphore(device, f.acquire, nullptr);
     }
@@ -140,6 +142,7 @@ CommandList* VulkanDevice::beginFrame(Swapchain* swapchain) {
         wi.pValues = &f.timelineValue;
         vkWaitSemaphores(device, &wi, UINT64_MAX);
     }
+    collectProfile(slot);
     collectGarbage(false);
     ringHead_ = uint64_t(slot) * kRingBytesPerFrame;
 
@@ -147,6 +150,11 @@ CommandList* VulkanDevice::beginFrame(Swapchain* swapchain) {
     VkCommandBufferBeginInfo bi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO};
     bi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
     vkBeginCommandBuffer(f.cb, &bi);
+    if (profile_.enabled()) {
+        profile_.reset(slot, frameNumber_);
+        vkCmdResetQueryPool(f.cb, f.queries, 0, GpuProfile::kQueries);
+        timestamp(0);
+    }
     cmd_.begin(f.cb);
     recording_ = true;
     if (swapchain) static_cast<VkSwap*>(swapchain)->acquire(f.acquire);
@@ -159,6 +167,7 @@ void VulkanDevice::endFrame(Swapchain* swapchain) {
     VkSwap* sc = static_cast<VkSwap*>(swapchain);
     const bool present = sc && sc->acquired_;
     if (present) textureBarrier(this, f.cb, sc->images_[sc->imageIndex_].get(), State::Present);
+    if (profile_.enabled()) timestamp(1);
     vkEndCommandBuffer(f.cb);
 
     VkCommandBufferSubmitInfo cbi{VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO};
@@ -184,6 +193,7 @@ void VulkanDevice::endFrame(Swapchain* swapchain) {
     si.pSignalSemaphoreInfos = signal;
     const VkResult r = vkQueueSubmit2(queue, 1, &si, VK_NULL_HANDLE);
     if (r != VK_SUCCESS) std::fprintf(stderr, "[vulkan] vkQueueSubmit2 failed (%d)\n", int(r));
+    else if (profile_.enabled()) profile_.submitted(slot);
     f.timelineValue = submitted_;
     for (auto& fn : pendingGarbage_) garbage_.push_back({submitted_, std::move(fn)});
     pendingGarbage_.clear();
@@ -195,6 +205,26 @@ void VulkanDevice::endFrame(Swapchain* swapchain) {
 void VulkanDevice::waitIdle() {
     vkDeviceWaitIdle(device);
     if (!recording_) collectGarbage(true);
+    if (!recording_) for (uint32_t i = 0; i < kFramesInFlight; ++i) collectProfile(i);
+}
+
+void VulkanDevice::timestamp(uint32_t query) {
+    if (query == GpuProfile::kInvalidQuery) return;
+    Frame& f = frames_[frameNumber_ % kFramesInFlight];
+    vkCmdWriteTimestamp2(f.cb, VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, f.queries, query);
+}
+
+void VulkanDevice::collectProfile(uint32_t slot) {
+    if (!profile_.pending(slot)) return;
+    uint64_t ticks[GpuProfile::kQueries]{};
+    const VkResult result = vkGetQueryPoolResults(device, frames_[slot].queries, 0, profile_.count(slot),
+                                                sizeof(ticks), ticks, sizeof(uint64_t), VK_QUERY_RESULT_64_BIT);
+    if (result != VK_SUCCESS) {
+        std::fprintf(stderr, "[vulkan] completed GPU timestamps unavailable (%d)\n", int(result));
+        return;
+    }
+    const uint64_t mask = timestampBits_ == 64 ? UINT64_MAX : (uint64_t(1) << timestampBits_) - 1;
+    profile_.collect(slot, ticks, double(props.limits.timestampPeriod) / 1e6, mask);
 }
 
 Transient VulkanDevice::allocTransient(uint64_t size) {

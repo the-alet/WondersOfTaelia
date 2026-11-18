@@ -87,15 +87,18 @@ Layer sampleLayer(uint i, float2 uv) {
     return l;
 }
 
-// Two scales of the same layer (4 m and 16 m, both divide 256 m) so the tiling doesn't show.
+// Rotated 2 m detail layers selected by a 16 m material mask; all periods divide the camera's 256 m wrap.
 Layer sampleGround(uint i, float2 xz) {
-    Layer a = sampleLayer(i, xz / 4.0), b = sampleLayer(i, xz / 16.0 + 0.37);
+    Layer a = sampleLayer(i, xz / 2.0), b = sampleLayer(i, float2(-xz.y,xz.x) / 2.0 + 0.37);
+    Layer macro = sampleLayer(i, xz / 16.0 + 0.19);
+    const float mixLayer = smoothstep(0.3,0.7,macro.height);
+    b.normalTS.xy = float2(b.normalTS.y,-b.normalTS.x);
     Layer o;
-    o.albedo = a.albedo * lerp(0.8, 1.2, b.height);
-    o.height = a.height * 0.7 + b.height * 0.3;
-    o.normalTS = normalize(float3(a.normalTS.xy + b.normalTS.xy * 0.12, a.normalTS.z));  // the big scale only tints
-    o.rough = a.rough;
-    o.ao = a.ao * lerp(0.85, 1.0, b.ao);
+    o.albedo = lerp(a.albedo,b.albedo,mixLayer) * lerp(0.82,1.16,macro.height);
+    o.height = lerp(a.height,b.height,mixLayer);
+    o.normalTS = normalize(lerp(a.normalTS,b.normalTS,mixLayer));
+    o.rough = lerp(a.rough,b.rough,mixLayer);
+    o.ao = lerp(a.ao,b.ao,mixLayer) * lerp(0.92,1.0,macro.ao);
     return o;
 }
 
@@ -155,7 +158,7 @@ GBufferOut PSMain(VSOut i) {
     albedo *= lerp(0.8, 1.15, g_tex2D[g_push.albedo[0]].SampleLevel(s_linearWrap, xz / 256.0, 3.0).a);
     const float wet = i.extra.y;
     albedo *= lerp(1.0, 0.55, wet);
-    rough = lerp(rough, 0.35, wet);
+    rough = lerp(rough, 0.24, wet * wet);
     // Dents and craters: their fine shape in the normal (less what the tile's own shape shows), the soil under the turf
     // and the layers under it laid bare by depth, shaded in the bowl; loose soil heaped on the rim.
     if (asuint(g_frame.dents.w) != 0u) {

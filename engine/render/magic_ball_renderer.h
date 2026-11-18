@@ -23,6 +23,10 @@ struct RenderMagicBall {
     double fill = 1;      // 0..1
     int aspect = 3;       // Aspect order
     uint32_t id = 0;
+    double instability = 0;
+    bool physical = false;
+    double impactAge = -1; // >=0: an aspect-coloured collision pulse, seconds since contact
+    dvec3 impactNormal{0,1,0};
 };
 
 class MagicBallRenderer {
@@ -34,14 +38,15 @@ public:
     void draw(rhi::CommandList* cmd, const rhi::Transient& frameConstants, rhi::Texture* hdr, rhi::Texture* depth);
 
 private:
-    struct InstanceGpu {  // 32 bytes, read by magic_ball.hlsl
+    struct InstanceGpu {  // 48 bytes, read by magic_ball.hlsl
         float rel[3];
         float radius;
         float aspect, fill, seed, pad;
+        float normal[3], reserved;
     };
     rhi::Device* device_ = nullptr;
-    std::unique_ptr<rhi::Pipeline> pipe_, dustPipe_;
-    std::vector<InstanceGpu> instances_, dust_;
+    std::unique_ptr<rhi::Pipeline> pipe_, dustPipe_, physicalPipe_;
+    std::vector<InstanceGpu> instances_, dust_, physical_;
 };
 
 }  // namespace taelia

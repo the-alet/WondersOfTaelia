@@ -78,6 +78,7 @@ struct MagicSample {
     double theta = 0;  // J
     double airT = 0;   // K over the air's own temperature
     double necroticHeld = 0;  // kg/m3 of necrotic magic the things here hold (it tints them)
+    double grassDamage = 0;   // persistent 0..1 loss of living ground cover
     int level = -1;    // -1: no field here, the baseline
 };
 
@@ -111,7 +112,8 @@ public:
         kTheta = kAspects + 3,
         kAirT = kAspects + 4,
         kNecroticHeld = kAspects + 5,
-        kValues = kAspects + 6
+        kGrassDamage = kAspects + 6,
+        kValues = kAspects + 7
     };
 
     MagicField(const Terrain* terrain, const WindField* wind, const MagicOptions& o = {});
@@ -140,6 +142,7 @@ public:
     bool addDensity(const dvec3& p, Aspect a, double kgPerM3);
     // Adds kg of an aspect to the finest cell holding p (a lightning strike's fire). False if none.
     bool addMass(const dvec3& p, Aspect a, double kg);
+    bool addMovingMass(const dvec3& p, Aspect a, double kg, const dvec3& velocity);
     // The densities in the finest cell holding p, as they are (no blending with its neighbours), and its volume (m3).
     // False if none.
     bool cellAt(const dvec3& p, MagicDensities& out, double* volume = nullptr) const;

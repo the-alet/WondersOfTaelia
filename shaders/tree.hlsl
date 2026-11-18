@@ -20,6 +20,7 @@ struct VSOut {
     float3 local : TEXCOORD2;                  // the mesh position (leaves burn away by it)
     nointerpolation float charred : TEXCOORD3;  // how far fire has charred this tree (0..1)
     float flow : TEXCOORD4;                     // where the magic streaming through it has got to (m from the root)
+    float2 foliage : TEXCOORD5;                 // crown occlusion and deterministic leaf-cluster variation
 };
 
 VSOut VSMain(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
@@ -58,6 +59,7 @@ VSOut VSMain(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.local = p;
     o.charred = rot.w;
     o.flow = asfloat(vb.Load(base + 28)) + rot.z * 1.7;  // each tree's streams out of step with its neighbours'
+    o.foliage = float2((info>>9)&255u,(info>>17)&255u)/255.0;
     return o;
 }
 
@@ -66,6 +68,8 @@ GBufferOut BarkPS(VSOut i) {
     float4 a = g_tex2D[g_push.albedo].Sample(s_anisoWrap, uv) * float4(g_push.tint.xxx, 1);
     a.rgb = lerp(a.rgb, a.rgb * 0.1 + 0.01, i.charred);  // charcoal
     const float4 d = g_tex2D[g_push.detail].Sample(s_anisoWrap, uv);
+    const float weathering = latticeNoise3(i.local*float3(0.45,0.8,0.45));
+    a.rgb *= lerp(0.84,1.12,weathering);
     const float3 N = normalize(i.normal);
     const float3 T = normalize(cross(float3(0, 1, 0), N) + float3(1e-4, 0, 0));
     const float3 B = cross(N, T);
@@ -89,6 +93,7 @@ GBufferOut BarkPS(VSOut i) {
 GBufferOut LeafPS(VSOut i, bool front : SV_IsFrontFace) {
     Texture2D<float4> tex = g_tex2D[g_push.albedo];
     float4 a = tex.Sample(s_linearClamp, i.uv);
+    a.rgb *= lerp(float3(0.80,0.88,0.79),float3(1.09,1.04,0.91),i.foliage.y);
     // Mips average the alpha away; push it back up so far crowns don't thin out.
     const float lod = tex.CalculateLevelOfDetail(s_linearClamp, i.uv);
     a.a *= 1.0 + 0.3 * max(lod, 0.0);
@@ -108,7 +113,7 @@ GBufferOut LeafPS(VSOut i, bool front : SV_IsFrontFace) {
     const float midrib = 0.35 + 0.65 * pow(saturate(1.0 - abs(i.uv.x - 0.5) * 2.0), 3.0);
     o.albedo = magicView() ? magicViewAlbedo(a.rgb, heldMagicGlow(MAGIC_HELD_LIFE, 1.0 - i.charred, i.flow, midrib) +
                                                         sapGlow(1.0 - i.charred, i.flow, midrib))
-                           : float4(a.rgb, 1.0);
+                           : float4(a.rgb, i.foliage.x);
     o.normal = float4(N, d.z);
     o.material = float4(d.w, 0.35, 0, packMagic(MAGIC_HELD_LIFE, 1.0 - i.charred, false));  // translucency
     o.motion = 0;

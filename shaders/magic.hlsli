@@ -21,6 +21,7 @@ float3 aspectColor(uint aspect1) {  // aspect + 1, as packMagic stores it
         case 5: return K_MAGIC_COLOR_AIR;
         case 6: return K_MAGIC_COLOR_LIGHTNING;
         case 7: return K_MAGIC_COLOR_LIGHT;
+        case 8: return K_MAGIC_COLOR_NEUTRAL;
         case 9: return K_MAGIC_COLOR_NECROTIC;
         default: return 0;
     }
@@ -235,6 +236,11 @@ float necroticHeldAt(float3 rel) {
 float necroticAmount(float3 rel) {
     const float h = necroticHeldAt(rel);
     return h / (h + K_MAGIC_NECROTIC_TINT);
+}
+float grassDamageAt(float3 rel) {
+    uint l; float3 uvw;
+    if (!magicCoords(rel, l, uvw)) return 0;
+    return saturate(g_tex3D[l == 0 ? g_frame.magicHeld.x : g_frame.magicHeld.y].SampleLevel(s_linearClamp, uvw, 0).g);
 }
 // Its grey-violet tint on a colour: the colour's brightness in its hue, a little darker (it withers what it holds).
 float3 necroticTint(float3 c, float amount) {

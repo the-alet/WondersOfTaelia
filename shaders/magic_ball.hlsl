@@ -15,24 +15,31 @@ struct VSOut {
     float4 pos : SV_Position;
     float3 rel : TEXCOORD0;  // this point of the quad, relative to the camera
     nointerpolation float4 ball : TEXCOORD1;  // centre (relative to the camera), radius
-    nointerpolation float3 info : TEXCOORD2;  // aspect, fill, seed
+    nointerpolation float4 info : TEXCOORD2;  // aspect, fill, seed, instability (<0 physical condensate)
+    float2 corner : TEXCOORD3;
+    nointerpolation float3 normal : TEXCOORD4;
 };
 
 VSOut VSMain(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     ByteAddressBuffer inst = g_buffers[g_push.instSrv];
-    const uint base = g_push.instOffset + iid * 32;
+    const uint base = g_push.instOffset + iid * 48;
     const float4 a = asfloat(inst.Load4(base)), b = asfloat(inst.Load4(base + 16));
+    const float3 normal = asfloat(inst.Load3(base+32));
     const float2 corners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1), float2(-1, -1), float2(1, 1), float2(-1, 1)};
     const float2 c = corners[vid];
-    const float size = a.w * 2.4;  // room for the halo
+    const bool impact = b.w >= 2.0;
+    const float age = saturate(b.y / K_MAGIC_IMPACT_SECONDS);
+    const float size = impact ? a.w * (1.5 + 5.0*age) : a.w * 2.4;
     // The quad stands in front of the ball (toward the eye), so nothing just behind its centre hides it.
     const float3 toEye = -normalize(a.xyz);
-    const float3 centre = a.xyz + toEye * min(a.w, length(a.xyz) * 0.5);
+    const float3 centre = impact ? a.xyz + normal*age*a.w*1.4 : a.xyz + toEye * min(a.w, length(a.xyz) * 0.5);
     VSOut o;
     o.rel = centre + (g_frame.cameraRight.xyz * c.x + g_frame.cameraUp.xyz * c.y) * size;
     o.pos = mul(g_frame.viewProj, float4(o.rel, 1));
     o.ball = a;
-    o.info = b.xyz;
+    o.info = b;
+    o.corner = c;
+    o.normal = normal;
     return o;
 }
 
@@ -42,10 +49,14 @@ float3 ballColor(uint aspect) {
     return aspectColor(aspect + 1);
 }
 
+#include "magic_impact.hlsli"
+
 float4 PSMain(VSOut i) : SV_Target0 {
+    if (i.info.w >= 2.0) return impactColor(i.corner,i.info,i.normal);
     const float3 dir = normalize(i.rel);
     const float3 c = i.ball.xyz;
-    const float r = i.ball.w;
+    const float unstable = max(i.info.w, 0.0);
+    const float r = i.ball.w * (1.0 + unstable * 0.10 * sin(g_frame.fireInfo.x * 37.0 + i.info.z));
     const uint aspect = uint(i.info.x + 0.5);
     const float fill = i.info.y, seed = i.info.z;
     const float t = g_frame.fireInfo.x;
@@ -55,14 +66,35 @@ float4 PSMain(VSOut i) : SV_Target0 {
     const float d2 = dot(closest, closest), r2 = r * r;
     const float inside = d2 < r2 ? 2.0 * sqrt(r2 - d2) / (2.0 * r) : 0.0;  // 0 at the rim .. 1 through the middle
     const float rim = sqrt(d2) / r;                                         // 1 at the edge
-    const float halo = exp(-max(rim - 1.0, 0.0) * 5.0) * smoothstep(2.3, 1.0, rim);
+    if (i.info.w < 0.0) {
+        clip(r2 - d2);
+        const float3 hit = dir * (along - sqrt(max(r2-d2,0.0)));
+        const float3 n = normalize(hit-c);
+        const float3 env = skyColor(reflect(dir,n));
+        const float fresnel = 0.02 + 0.98 * pow(1.0-saturate(dot(n,-dir)),5.0);
+        float3 color;
+        float alpha = 1;
+        if (aspect == 1) {
+            color = lerp(float3(0.04,0.12,0.15),env,fresnel);
+            alpha = 0.38+0.6*fresnel;
+        } else if (aspect == 0) color = float3(0.17,0.13,0.09) * skyAmbient(n);
+        else if (aspect == 4) { color = env*0.6; alpha = 0.12 * inside; }
+        else { color = K_MAGIC_COLOR_NECROTIC*skyAmbient(n); alpha = 0.35*inside; }
+        [unroll] for(uint sun=0;sun<2;++sun) {
+            const float3 h = normalize(g_frame.suns[sun].xyz-dir);
+            color += g_frame.sunLight[sun].rgb*pow(saturate(dot(n,h)),aspect==1?180.0:12.0)*0.25;
+        }
+        if(magicView()) color = aspectColor(aspect+1)*K_MAGIC_SURFACE_GLOW;
+        return float4(color,alpha);
+    }
+    const float halo = exp(-max(rim - 1.0, 0.0) * 12.0) * (1.0 - smoothstep(1.0, 1.45, rim));
     // A swirl moving inside: the noise sampled where the ray is nearest the centre, turning with time.
     const float3 q = (closest / r) * 2.2;
     const float spin = t * (aspect == 3 ? 2.6 : (aspect == 4 ? 3.2 : 1.4));
     const float cs = cos(spin), sn = sin(spin);
     const float3 qr = float3(q.x * cs - q.z * sn, q.y + t * 0.3, q.x * sn + q.z * cs) + seed;
     const float n1 = latticeNoise3(qr * 1.7), n2 = latticeNoise3(qr * 3.9 + 7.0);
-    float swirl = 0.55 + 0.45 * (n1 * 0.7 + n2 * 0.3);
+    float swirl = 0.12 + 1.6 * smoothstep(0.30, 0.70, n1 * 0.7 + n2 * 0.3);
     float3 col = ballColor(aspect);
     float glow = 2.2;
     if (aspect == 3) {  // fire: a hot flickering core
@@ -82,10 +114,26 @@ float4 PSMain(VSOut i) : SV_Target0 {
         swirl = 0.4 + 0.6 * n1;
         glow = 1.1;
     }
-    const float dense = inside * swirl + halo * 0.25;
-    float3 light = col * dense * glow * (0.35 + 0.65 * fill);
+    float transmittance = 1.0;
+    float radiance = 0;
+    // Integrate through the sphere: overlapping moving filaments keep its shape readable instead of a flat noise spot.
+    [unroll] for (int step = 0; step < 8; ++step) {
+        const float alongSphere = ((step + 0.5) / 8.0 * 2.0 - 1.0) * inside;
+        const float3 samplePoint = closest / r + dir * alongSphere;
+        const float3 flow = float3(samplePoint.x * cs - samplePoint.z * sn, samplePoint.y - t * 0.18,
+                                  samplePoint.x * sn + samplePoint.z * cs);
+        const float noise = latticeNoise3(flow * 5.0 + seed);
+        const float strands = smoothstep(0.36, 0.66, noise);
+        const float absorption = 1.0 - exp(-(0.75 + 3.5 * strands) * inside * 0.25);
+        radiance += transmittance * absorption * (0.18 + 0.55 * strands + 0.15 * swirl);
+        transmittance *= 1.0 - absorption;
+    }
+    float3 light = col * (radiance + halo * 0.025) * glow * (0.35 + 0.65 * fill);
+    light *= 1.0 + unstable * (0.45 * sin(t*45.0+seed) + 1.3 * pow(saturate(n2),9.0));
     if (magicView()) light *= 2.5;  // magic glows by its own light
-    return float4(light, 0);
+    // Dense swirls attenuate the scene as well as emitting: the ball retains a readable volume at arm's length.
+    const float opacity = (1.0 - transmittance) * (aspect == 6 ? 0.2 : 0.85);
+    return float4(light, opacity);
 }
 
 // ---------------------------------------------------------------- dust: a thing of pure life magic crumbled
@@ -98,7 +146,7 @@ struct DustOut {
 
 DustOut DustVS(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     ByteAddressBuffer inst = g_buffers[g_push.instSrv];
-    const uint base = g_push.instOffset + iid * 32;
+    const uint base = g_push.instOffset + iid * 48;
     const float4 a = asfloat(inst.Load4(base)), b = asfloat(inst.Load4(base + 16));
     const float age = saturate(b.x / K_MAGIC_DUST_SECONDS);
     const float2 corners[6] = {float2(-1, -1), float2(1, -1), float2(1, 1), float2(-1, -1), float2(1, 1), float2(-1, 1)};

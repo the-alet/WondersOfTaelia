@@ -189,6 +189,7 @@ bool VulkanDevice::init(const DeviceDesc& desc, std::string* error) {
             physical = pd;
             props = p;
             queueFamily = uint32_t(family);
+            timestampBits_ = qf[queueFamily].timestampValidBits;
         }
     }
     if (!physical) {
@@ -472,6 +473,10 @@ bool VulkanDevice::init(const DeviceDesc& desc, std::string* error) {
     set1 = sets[1];
 
     // ---------------------------------------------------------------- frame loop objects
+    if (!desc.gpuProfile.empty() && (!timestampBits_ || !profile_.open(desc.gpuProfile))) {
+        if (error) *error = "GPU timestamps unsupported or profile CSV cannot be opened";
+        return false;
+    }
     VkSemaphoreTypeCreateInfo sti{VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO};
     sti.semaphoreType = VK_SEMAPHORE_TYPE_TIMELINE;
     VkSemaphoreCreateInfo tsci{VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO, &sti};
@@ -481,6 +486,12 @@ bool VulkanDevice::init(const DeviceDesc& desc, std::string* error) {
     cpi.flags = VK_COMMAND_POOL_CREATE_TRANSIENT_BIT;
     cpi.queueFamilyIndex = queueFamily;
     for (auto& f : frames_) {
+        if (profile_.enabled()) {
+            VkQueryPoolCreateInfo qi{VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO};
+            qi.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            qi.queryCount = GpuProfile::kQueries;
+            VK_CHECK_INIT(vkCreateQueryPool(device, &qi, nullptr, &f.queries), "timestamp query pool");
+        }
         VK_CHECK_INIT(vkCreateCommandPool(device, &cpi, nullptr, &f.pool), "command pool");
         VkCommandBufferAllocateInfo cai{VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO};
         cai.commandPool = f.pool;

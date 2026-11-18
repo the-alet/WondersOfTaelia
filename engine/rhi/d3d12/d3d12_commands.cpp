@@ -191,10 +191,22 @@ void D3D12CommandList::copyTexture(Texture* dst, Texture* src) {
 }
 
 void D3D12CommandList::beginMarker(const char* name) {
+    if (dev->profile_.enabled()) {
+        const uint32_t slot = uint32_t(dev->frameNumber_ % kFramesInFlight);
+        const uint32_t q = dev->profile_.begin(slot, name);
+        if (q != GpuProfile::kInvalidQuery) cl->EndQuery(dev->queries_[slot].Get(), D3D12_QUERY_TYPE_TIMESTAMP, q);
+    }
     // PIX-compatible: metadata 1 = ANSI string including the terminator.
     cl->BeginEvent(1, name, UINT(std::strlen(name) + 1));
 }
 
-void D3D12CommandList::endMarker() { cl->EndEvent(); }
+void D3D12CommandList::endMarker() {
+    cl->EndEvent();
+    if (dev->profile_.enabled()) {
+        const uint32_t slot = uint32_t(dev->frameNumber_ % kFramesInFlight);
+        const uint32_t q = dev->profile_.end(slot);
+        if (q != GpuProfile::kInvalidQuery) cl->EndQuery(dev->queries_[slot].Get(), D3D12_QUERY_TYPE_TIMESTAMP, q);
+    }
+}
 
 }  // namespace taelia::rhi::d3d12

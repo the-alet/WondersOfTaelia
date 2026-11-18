@@ -180,9 +180,14 @@ double grassOf(const GroundMaterials& m, bool underwater) {
 double holdOf(const Ground& g) { return kSurfaces[g.surface].rolling + 1.2 * std::max(g.grassHeight - 0.04, 0.0); }
 
 // The wind's push on a ball, in units of its weight.
-double windPush(const dvec3& air) {
+double fieldPush(const dvec3& air, double rho, const dvec3& flow, const dvec3& normal) {
     const double r = k::BALL_RADIUS;
-    return 0.5 * kAirDensity * kDrag * kPi * r * r * dot(air, air) / (k::BALL_MASS * kGravity);
+    const double over = std::max(rho - double(k::MAGIC_EFFECT_THRESHOLD), 0.0);
+    const dvec3 force = (air * (kAirDensity * length(air)) + flow * (over * k::MAGIC_PUSH * length(flow))) *
+                        (0.5 * kDrag * kPi * r * r / (k::BALL_MASS * kGravity));
+    const double lift = dot(force, normal);
+    // Downward flow presses into the ground; upward flow can lift even without a tangential push.
+    return std::max(length(force - normal * lift) / std::max(1.0 - lift, 0.01), lift >= 1.0 ? 1e6 : 0.0);
 }
 
 }  // namespace
@@ -414,7 +419,7 @@ void Physics::Impl::applyAirWaterGround(BallBody& b, double h) {
     b.slowSubsteps = slow ? b.slowSubsteps + 1 : 0;
     const double slope = std::sqrt(std::max(1.0 - g.normal.y * g.normal.y, 0.0)) / std::max(g.normal.y, 0.05);
     const double hold = holdOf(g);
-    if (b.slowSubsteps >= kSettleSubsteps && slope < 0.9 * hold && windPush(air) < 0.8 * hold) {
+    if (b.slowSubsteps >= kSettleSubsteps && slope < 0.9 * hold && fieldPush(air, rhoMagic, uMagic, g.normal) < 0.8 * hold) {
         b.actor->putToSleep();
         b.slowSubsteps = 0;
         b.rest = g;
@@ -434,11 +439,18 @@ void Physics::Impl::substep(double h, bool first) {
                 b.restKnown = true;
             }
             // Now and then a resting ball asks whether the wind can move it (a gust stronger than the ground's hold).
-            if (!wind || !first || stepIndex % kWakeCheckSteps != 0) continue;
+            if (!first || (!magic && (!wind || stepIndex % kWakeCheckSteps != 0))) continue;
             const bool floating = b.rest.water > b.rest.height;
             const double above = b.state.position.y - std::max(b.rest.height, b.rest.water);
             const double hold = floating ? 0.01 : holdOf(b.rest);  // water hardly holds a floating ball
-            if (windPush(wind->at(b.state.position, std::max(above, 0.0))) < hold) continue;
+            dvec3 air = wind ? wind->at(b.state.position, std::max(above, 0.0)) : dvec3{};
+            double rho = 0, share = 0;
+            dvec3 flow;
+            if (magic) {
+                magic(b.state.position, rho, flow, share);
+                air += (flow - air) * (k::MAGIC_WIND_SHARE * share);
+            }
+            if (fieldPush(air, rho, flow, floating ? dvec3{0, 1, 0} : b.rest.normal) < hold) continue;
             b.actor->wakeUp();
             b.slowSubsteps = 0;
         }
@@ -584,6 +596,20 @@ void Physics::removeRock(uint32_t id) {
 }
 
 void Physics::setMagicSampler(MagicSampler sampler) { impl_->magic = std::move(sampler); }
+
+bool Physics::impulseBall(uint32_t id, const dvec3& impulse) {
+    for (BallBody& b : impl_->balls) {
+        if (b.state.id != id) continue;
+        if (length(impulse) < 1e-10) return true;
+        b.state.velocity += impulse * (1.0 / k::BALL_MASS);
+        b.state.resting = false;
+        b.actor->setLinearVelocity(toPx(b.state.velocity), true);
+        b.slowSubsteps = 0;
+        for (Ball& v : impl_->view) if (v.id == id) v = b.state;
+        return true;
+    }
+    return false;
+}
 
 void Physics::takeImpacts(std::vector<Impact>& out) {
     out.insert(out.end(), impl_->impacts.begin(), impl_->impacts.end());

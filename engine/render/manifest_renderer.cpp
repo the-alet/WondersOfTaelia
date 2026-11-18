@@ -44,9 +44,9 @@ void crystalCluster(std::vector<float>& v, std::vector<uint32_t>& idx) {
         const dvec3 top = up * (body + tip);
         for (int i = 0; i < 6; ++i) {
             const dvec3 a0 = ring[i], a1 = ring[(i + 1) % 6], b0 = a0 + up * body, b1 = a1 + up * body;
-            addTriangle(v, idx, a0, b0, a1);
-            addTriangle(v, idx, a1, b0, b1);
-            addTriangle(v, idx, b0, top, b1);
+            addTriangle(v, idx, a0, a1, b0);
+            addTriangle(v, idx, a1, b1, b0);
+            addTriangle(v, idx, b0, b1, top);
         }
     }
 }
@@ -89,7 +89,7 @@ bool ManifestRenderer::init(rhi::Device* device, std::string* error) {
     d.vs = "manifest.VSMain";
     d.ps = "manifest.PSMain";
     gbuffer::fillFormats(d);
-    d.cull = rhi::Cull::None;
+    d.cull = rhi::Cull::Back; // sprouts explicitly contain both sides; minerals face outward
     d.name = "manifest";
     pipe_ = device_->createGraphicsPipeline(d, error);
     rhi::GraphicsPipelineDesc f;

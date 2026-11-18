@@ -5,8 +5,8 @@
 #include "gbuffer.hlsli"
 #include "magic.hlsli"
 
-static const float CELL = 0.25;          // metres per candidate cell
-static const uint CANDIDATES = 4;        // blade candidates per cell near the camera
+static const float CELL = K_GRASS_CELL_METRES;
+static const uint CANDIDATES = K_GRASS_TUFT_BLADES;
 static const uint SEGMENTS = 5;
 static const uint VERTS_PER_BLADE = SEGMENTS * 6;
 static const uint GRID = K_TERRAIN_GRID;
@@ -42,10 +42,14 @@ void GenMain(uint3 id : SV_DispatchThreadID) {
     const float far = d / g_push.radius;
     const float keep = saturate(1.0 - far * far * 0.9);   // thinner with distance...
     const float widen = 1.0 + far * 2.5;                   // ...but wider, so the cover holds
+    const uint tuft = pcgHash(uint(cell.x) * 73856093u ^ uint(cell.y) * 19349663u);
+    const float2 root = float2(rand01(pcgHash(tuft+19u)),rand01(pcgHash(tuft+47u))) * 0.78 + 0.11;
     [unroll] for (uint k = 0; k < CANDIDATES; ++k) {
+        if (k >= 4 && d > 24.0) continue; // fine tuft structure near the eye; stable coarse cover farther out
         const uint h = pcgHash(uint(cell.x) * 73856093u ^ uint(cell.y) * 19349663u ^ (k * 83492791u));
         if (rand01(h) > keep) continue;
-        const float2 local = (float2(id.xy) + float2(rand01(pcgHash(h + 1)), rand01(pcgHash(h + 2)))) * CELL;  // from the corner
+        const float2 offset = float2(rand01(pcgHash(h+1)),rand01(pcgHash(h+2))) - 0.5;
+        const float2 local = (float2(id.xy) + root + offset * 0.21) * CELL;
         const int2 t = int2(floor(local / g_push.tileSize));
         if (any(t < 0) || any(t >= int(g_push.gridTiles))) continue;
         const int entry = asint(g_buffers[g_push.lookupSrv].Load(g_push.lookupOffset + uint(t.y * int(g_push.gridTiles) + t.x) * 4));
@@ -63,16 +67,19 @@ void GenMain(uint3 id : SV_DispatchThreadID) {
         const float4 m = lerp(lerp(unpackUnorm8x4(v00.z), unpackUnorm8x4(v10.z), f.x), lerp(unpackUnorm8x4(v01.z), unpackUnorm8x4(v11.z), f.x), f.y);
         const float4 e = lerp(lerp(unpackUnorm8x4(v00.w), unpackUnorm8x4(v10.w), f.x), lerp(unpackUnorm8x4(v01.w), unpackUnorm8x4(v11.w), f.x), f.y);
         const float meadow = e.x, wet = e.y;
-        const float density = m.x * (0.35 + 0.65 * meadow) * (1.0 - wet);
+        const float3 patchPos = float3(local.x + g_push.cornerRel.x + g_frame.cameraWrap.x, 0,
+                                       local.y + g_push.cornerRel.y + g_frame.cameraWrap.z);
+        const float patch = latticeNoise3(patchPos * 0.55);
+        const float density = m.x * (0.45 + 0.55 * meadow) * (1.0 - wet) * lerp(0.48,1.0,smoothstep(0.2,0.75,patch));
         if (rand01(pcgHash(h + 3)) > density) continue;
 
         const float3 base = float3(g_push.cornerRel.x + local.x, (hgt - g_frame.cameraPosHigh.y) - g_frame.cameraPosLow.y, g_push.cornerRel.y + local.y);
         // Fire burnt the grass away here: none inside, short and charred at the edge.
-        const float burnt = scorchAt(base);
+        const float burnt = max(scorchAt(base), grassDamageAt(base));
         if (burnt > 0.85) continue;
         if (dentAt(base.xz) < -0.012) continue;  // dug: bare soil, no blades
         // Shorter toward the edge of the radius, so the field fades into the ground colour instead of ending in a line.
-        const float height = lerp(0.22, 0.85, meadow) * (0.65 + 0.7 * rand01(pcgHash(h + 4))) * smoothstep(1.0, 0.55, far) * (1.0 - 0.8 * burnt);
+        const float height = lerp(0.16, 0.68, meadow) * (0.65 + 0.7 * rand01(pcgHash(h + 4))) * lerp(0.65,1.15,patch) * smoothstep(1.0, 0.55, far) * (1.0 - 0.8 * burnt);
         const float4 clip = mul(g_frame.viewProj, float4(base + float3(0, height * 0.5, 0), 1));
         const float margin = clip.w * 0.1 + height;
         if (clip.w <= 0 || abs(clip.x) > clip.w + margin || abs(clip.y) > clip.w + margin) continue;
@@ -81,9 +88,9 @@ void GenMain(uint3 id : SV_DispatchThreadID) {
         g_rwBuffers[g_push.argsUav].InterlockedAdd(4, 1u, index);
         if (index >= g_push.maxBlades) return;
         const float4 a = float4(base, height);
-        const float4 b = float4(rand01(pcgHash(h + 5)) * 6.2831853, (0.010 + 0.008 * rand01(pcgHash(h + 6))) * widen,
-                                0.3 + 0.7 * rand01(pcgHash(h + 7)),
-                                lerp(rand01(pcgHash(h + 8)) * 0.6 + (1.0 - meadow) * 0.4, 2.0, burnt));  // w: dry 0..1, charred 1..2
+        const float4 b = float4(rand01(pcgHash(h + 5)) * 6.2831853, (0.013 + 0.012 * rand01(pcgHash(h + 6))) * widen,
+                                0.45 + 0.95 * rand01(pcgHash(h + 7)),
+                                lerp(rand01(pcgHash(tuft + 8)) * 0.22 + (1.0 - meadow) * 0.28, 2.0, burnt));  // w: dry 0..1, charred 1..2
         g_rwBuffers[g_push.bladesUav].Store4(index * 32, asuint(a));
         g_rwBuffers[g_push.bladesUav].Store4(index * 32 + 16, asuint(b));
     }
@@ -95,6 +102,7 @@ struct VSOut {
     float3 uvAo : TEXCOORD0;  // u across, v along, ambient occlusion
     float dry : TEXCOORD1;
     float flow : TEXCOORD2;   // where the magic streaming up the blade has got to (m, each blade out of step)
+    float3 across : TEXCOORD3;
 };
 
 VSOut VSMain(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
@@ -111,15 +119,15 @@ VSOut VSMain(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     const float3 world = a.xyz + float3(g_frame.cameraWrap.x, 0, g_frame.cameraWrap.z);
     const float2 wind = g_frame.wind.xz;
     const float gust = 0.55 + 0.45 * sin(dot(world.xz, float2(0.21, 0.17)) - g_frame.time.z * 1.9 + dot(wind, world.xz) * 0.01);
-    const float2 push = wind * (0.045 * gust) + facing * (b.z * 0.35);
+    const float2 push = wind * (0.045 * gust) + facing * (b.z * 0.62);
     float3 p = a.xyz + float3(0, t * a.w, 0) + float3(push.x, 0, push.y) * (t * t * a.w);
     p.y -= dot(push, push) * t * t * a.w * 0.25;  // bending shortens the blade
-    const float w = b.y * (1.0 - pow(t, 1.4));
+    const float w = b.y * pow(saturate(1.0 - t), 0.65);
     p += across * side * w * 0.5;
 
     const float3 along = normalize(float3(push.x * 2.0 * t, 1.0, push.y * 2.0 * t));
     float3 n = normalize(cross(across, along));
-    n = normalize(lerp(n, float3(0, 1, 0), 0.45));  // soft, like a layer
+    n = normalize(lerp(n, float3(0, 1, 0), 0.25));
 
     VSOut o;
     o.pos = mul(g_frame.viewProj, float4(p, 1));
@@ -127,6 +135,7 @@ VSOut VSMain(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.uvAo = float3(side * 0.5 + 0.5, t, lerp(0.35, 1.0, t));
     o.dry = b.w;
     o.flow = t * a.w + b.x * 0.7;
+    o.across = across;
     return o;
 }
 
@@ -135,12 +144,13 @@ GBufferOut PSMain(VSOut i, bool front : SV_IsFrontFace) {
     const float4 d = g_tex2D[g_push.bladeDetail].Sample(s_linearClamp, i.uvAo.xy);
     float3 albedo = lerp(c.rgb, float3(0.17, 0.15, 0.07), saturate(i.dry));
     albedo = lerp(albedo, float3(0.025, 0.021, 0.018), saturate(i.dry - 1.0));  // charred at a burnt patch's edge
-    const float3 n = normalize(i.normal) * (front ? 1.0 : -1.0);
+    const float3 n = normalize(i.normal + i.across * ((d.x * 2.0 - 1.0) * 0.4)) * (front ? 1.0 : -1.0);
     GBufferOut o;
-    o.albedo = magicView() ? magicViewAlbedo(albedo, heldMagicGlow(MAGIC_HELD_LIFE, 1.0, i.flow, 1.0) + sapGlow(1.0, i.flow, 1.0))
+    const float life = 1.0-saturate(i.dry-1.0);
+    o.albedo = magicView() ? magicViewAlbedo(albedo, heldMagicGlow(MAGIC_HELD_LIFE, life, i.flow, 1.0) + sapGlow(life, i.flow, 1.0))
                            : float4(albedo, i.uvAo.z);
     o.normal = float4(normalize(n + float3(0, 0.6, 0) * (front ? 0 : 1)), d.z);
-    o.material = float4(0.45, 0.3, 0, packMagic(MAGIC_HELD_LIFE, 1.0, false));
+    o.material = float4(0.32, 0.18, 0, packMagic(MAGIC_HELD_LIFE, life, false));
     o.motion = 0;
     return o;
 }

@@ -144,6 +144,19 @@ TEST(player_keeps_out_of_trunks) {
     CHECK(nearest > k::PLAYER_RADIUS);
 }
 
+TEST(player_eyes_follow_the_animated_eye_pose_without_an_extra_offset) {
+    Player p;
+    p.position = {12.0, 3.0, -7.0};
+    p.yaw = 0.7;
+    p.crouch = 0.65;
+    p.gait = 0.31;
+    const HumanPose pose = humanPose(playerMotion(p, 1.25, 0.0));
+    const dvec3 expected = playerToWorld(p, humanEyes(pose));
+    const dvec3 actual = playerEyes(p, pose);
+    CHECK(length(actual - expected) < 1e-12);
+    CHECK(length(actual - playerToWorld(p, humanEyes(pose) + dvec3{0, 0, 0.07})) > 0.069);
+}
+
 TEST(magic_balls_gather_their_aspect_faster_than_neutral_and_stop_full) {
     // Earth is rich near the ground; fire away from the campfire is none, so a fire ball fills from neutral alone.
     double kg[2] = {0, 0};
@@ -161,7 +174,7 @@ TEST(magic_balls_gather_their_aspect_faster_than_neutral_and_stop_full) {
         kg[i] = w.gathering().kg;
         CHECK(w.gathering().aspect == in.aspect);
         if (i == 1) {
-            stepFor(w, 40.0);
+            for (int frame=0;frame<2400 && w.gathering().kg<k::MAGIC_BALL_FULL*0.99;++frame) w.step();
             CHECK(w.gathering().kg <= k::MAGIC_BALL_FULL + 1e-6);
             CHECK(w.gathering().kg > 0.5 * k::MAGIC_BALL_FULL);
         }
@@ -179,7 +192,7 @@ TEST(a_thrown_magic_ball_flies_straight_and_bursts_where_it_hits) {
     PlayerInput in;
     in.gather = true;
     in.face = true;
-    in.aspect = Aspect::Lightning;
+    in.aspect = Aspect::Light;
     w.setPlayerInput(in);
     stepFor(w, 6.0);
     const double held = w.gathering().kg;
@@ -187,7 +200,6 @@ TEST(a_thrown_magic_ball_flies_straight_and_bursts_where_it_hits) {
     // Aimed at the ground 12 m ahead.
     const dvec3 feet = w.humanPosition();
     const dvec3 target{feet.x, w.groundHeight(feet.x, feet.z + 12.0), feet.z + 12.0};
-    const double before = w.magicAt(target + dvec3{0, 0.5, 0}).rho[Aspect::Lightning];
     in.gather = false;
     in.aim = target;
     w.setPlayerInput(in);
@@ -197,11 +209,22 @@ TEST(a_thrown_magic_ball_flies_straight_and_bursts_where_it_hits) {
     CHECK(w.player().toss >= 0.0);  // the throwing arm
     if (w.magicBalls().empty()) return;
     const dvec3 v0 = w.magicBalls().front().velocity;
+    bool contacted = false;
+    dvec3 deposit;
     for (int i = 0; i < 120 && !w.magicBalls().empty(); ++i) {
-        const dvec3 v = w.magicBalls().front().velocity;
+        const MagicBall& ball = w.magicBalls().front();
+        const dvec3 v = ball.velocity;
         CHECK(length(v - v0) < 1e-9);  // weightless: straight on
+        SurfaceHit hit;
+        if (w.traceEnvironment(ball.position, ball.position + v * WorldClock::stepSeconds(), ball.radius(), hit)) {
+            contacted = true;
+            deposit = hit.point + hit.normal * (ball.radius() + 0.04);
+        }
         w.step();
     }
-    CHECK(w.magicBalls().empty());  // it hit the ground and burst
-    CHECK(w.magicAt(target + dvec3{0, 0.5, 0}).rho[Aspect::Lightning] > before + 1.0);
+    CHECK(contacted);
+    CHECK(w.magicBalls().empty());  // burst at its first actual contact, before its centre reaches the aim point
+    MagicDensities released;
+    CHECK(w.magic().cellAt(deposit, released));
+    CHECK(released[Aspect::Light] > 1.0);
 }

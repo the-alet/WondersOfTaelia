@@ -3,6 +3,10 @@
 # Format: NAME  type  value[,value...]  # comment.   Types: int uint float double float2 float3 float4
 
 # ---- simulation clock
+# Vegetation placement shared by the CPU dispatcher and the grass shader.
+GRASS_CELL_METRES           float   0.25
+GRASS_TUFT_BLADES           uint    8
+
 SIM_STEP_HZ                 int     60          # fixed simulation steps per simulated second
 TIME_SPEED_MIN              float   0.02        # x1/50
 TIME_SPEED_MAX              float   50.0        # x50
@@ -26,8 +30,8 @@ CAMERA_EASE_SECONDS         float   0.3         # s: flight eases to its speed a
 GAZE_MAX_PITCH_DEG          float   86.0
 
 # ---- focus blur (screen space; radii are fractions of the half screen height, measured from the gaze point)
-FOCUS_RADIUS                float   0.42        # generous focus area: no blur inside
-FOCUS_BLUR_MAX              float   0.018       # blur radius at the screen edge, fraction of screen height
+FOCUS_RADIUS                float   0.52        # generous focus area: keeps environmental detail readable
+FOCUS_BLUR_MAX              float   0.012       # restrained peripheral blur, fraction of screen height
 FOCUS_BLUR_POWER            float   1.6         # almost none at the focus edge, strong at the screen edge
 VIGNETTE_EDGE               float   0.05        # darkening at the very edge
 
@@ -85,6 +89,7 @@ MAGIC_MASS_LIGHTNING        float   12.0        # > 9.8 so 675 of fire turned to
 MAGIC_MASS_LIGHT            float   1.0         # ... light lightest
 MAGIC_MASS_NEUTRAL          float   4.0         # like air
 MAGIC_MASS_NECROTIC         float   128.0       # heavier than life magic: it creeps
+MAGIC_LIGHTNING_ENABLED     int     0           # reserved: user deferred lightning until it becomes a derived aspect
 MAGIC_THETA0                double  8.533333333333333e-5  # J: ambient magic temperature 256 mu/3 (v = 16/sqrt(m/mu) m/s)
 MAGIC_FIRE_BIRTH_THETA      float   3.0         # fire magic is born at this many THETA0
 MAGIC_GAMMA                 float   1.6666667   # monatomic: speed of sound sqrt(gamma Theta/m)
@@ -272,6 +277,13 @@ RUNE_BREAK                  float   1.5         # it bursts past this x its seal
 RUNE_INTAKE                 float   0.5         # 1/s: kg drawn in per second per m3 of rune per kg/m3 past the dew point
 RUNE_INTAKE_CAP_M3          float   8.0         # m3: never more per step than the field holds past the dew point in a fine cell
 RUNE_LEAK_AREA              float   0.005       # m2: how wide its seal lets the excess through (effusion)
+RUNE_BALANCE_SECONDS        float   30.0        # s: completed signs approach half capacity by exchanging real magic
+TREE_REVIVE_KG              float   6.0         # life magic needed per scale^3 of a dead tree
+TREE_REVIVE_SECONDS         float   4.0         # minimum visible regrowth time after sufficient life arrives
+TREE_FIRE_SPREAD_SECONDS    float   12.0        # spread from ignition to the trunk/crown
+FIRE_VISIBLE_SOURCES        uint    6           # nearby fire volumes besides the campfire
+MAGIC_IMPACT_MIN_KG         float   30.0        # below this remaining charge: no direct impact action or visual
+MAGIC_IMPACT_SECONDS        float   0.7         # short aspect-coloured contact effect
 
 # ---- the player (the user: the human is the player; the camera rides it)
 PLAYER_SPEED                float   4.2         # m/s on foot (a run)
@@ -299,7 +311,29 @@ MAGIC_BALL_FULL             float   240.0       # kg: a full ball (bursting, it 
 MAGIC_BALL_REACH            float   8.0         # m round the hands it gathers from (more from nearer)
 MAGIC_BALL_DRAW             float   1.0         # 1/s: the share of its aspect within reach it draws ...
 MAGIC_BALL_NEUTRAL          float   0.3         # ... neutral magic this times as fast (it must take the aspect: slower)
-MAGIC_BALL_RADIUS           float   0.12        # m: a full ball between the hands
+MAGIC_BALL_RADIUS           float   0.24        # m: full ball radius, doubled at the user's request
+MAGIC_BALL_HAND_POINT       float3  0.0,1.47,0.66 # raised between the palms so the larger ball stays in first-person view
+MAGIC_BALL_LOSS_PER_METRE   float   1.0         # kg/m: shed into the field along the flight path
+RUNE_DRAW_REACH            float   3.0         # m from the eye along the gaze (user)
+RUNE_DRAW_SIZE             float   0.5         # m: whole sign must fit on one surface, otherwise drawn in air
+RUNE_DRAW_SEAL             float   150.0       # kg/m3: user-drawn rune's seal; burst remains 1.5 times the seal
+RUNE_DRAW_MIN_SECONDS      float   1.0         # below this the sign is incomplete and inert
+RUNE_DRAW_MAX_SECONDS      float   5.0         # charge saturates after five seconds
+RUNE_DRAW_DENSITY          float   50.0        # kg/m3 at maximum drawing time
+RUNE_OVERCHARGE_SECONDS    float   3.0         # continued hold past max: unstable, then breaks
+BALL_OVERCHARGE_GRACE      float   2.0         # seconds held at full charge before instability
+BALL_OVERCHARGE_SECONDS    float   3.0         # continued unstable hold until it bursts
+MAGIC_FULL_MANIFEST_KG     float   1.0         # small physical manifestation at full charge, paid from the ball
+FIRE_WATER_QUENCH          float   0.12        # water contact kg -> reduction of burning strength
+FIRE_MAGIC_BOOST_SECONDS   float   3.0         # extra fire magic boosts an existing fire temporarily
+FIRE_MAGIC_BOOST           float   0.6         # maximum temporary boost to flame strength
+NECROTIC_CONTACT_RADIUS    float   2.5         # m: contact spreads through the ground's living cover
+NECROTIC_GRASS_SECONDS     float   2.0         # s: concentrated exposure withers grass
+NECROTIC_EARTH_RETAIN      float   1200.0      # s: contamination retention, longest to shortest
+NECROTIC_WATER_RETAIN      float   600.0
+NECROTIC_FIRE_RETAIN       float   180.0
+NECROTIC_AIR_RETAIN        float   45.0
+NECROTIC_STAIN_SECONDS     float   1.5         # rapid absorption; dispersal depends on the medium
 MAGIC_BALL_SPEED            float   18.0        # m/s thrown; weightless, it flies straight ...
 MAGIC_BALL_RANGE            float   80.0        # ... and bursts where it hits something, or this far out
 MAGIC_BALL_MIN              float   1.0         # kg: less is let go where it is (a click)

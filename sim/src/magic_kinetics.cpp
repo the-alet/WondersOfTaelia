@@ -118,6 +118,21 @@ double effectFactor(double rhoTotal) {
     return e > 0 ? e : 0.0;
 }
 
+double necroticRetention(const MagicDensities& medium) {
+    const Aspect elements[] = {Aspect::Earth, Aspect::Water, Aspect::Fire, Aspect::Air};
+    const double times[] = {k::NECROTIC_EARTH_RETAIN,k::NECROTIC_WATER_RETAIN,k::NECROTIC_FIRE_RETAIN,k::NECROTIC_AIR_RETAIN};
+    int dominant = 3;
+    for (int i=0;i<3;++i) if (medium[elements[i]] > medium[elements[dominant]]) dominant=i;
+    return times[dominant];
+}
+
+void neutralizeLight(MagicDensities& mixture) {
+    const float canceled = std::min(mixture[Aspect::Light],mixture[Aspect::Necrotic]);
+    mixture[Aspect::Light] -= canceled;
+    mixture[Aspect::Necrotic] -= canceled;
+    mixture[Aspect::Neutral] += 2*canceled;
+}
+
 bool visible(double rhoTotal) { return rhoTotal > double(k::MAGIC_DEW_POINT); }
 
 double heldAfter(double held, double around, double dt) {

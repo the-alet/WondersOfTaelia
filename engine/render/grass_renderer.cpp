@@ -6,12 +6,13 @@
 #include <vector>
 
 #include "render/gbuffer.h"
+#include "taelia/shared_constants.h"
 
 namespace taelia {
 
 namespace {
 
-constexpr double kCell = 0.25;  // grass.hlsl CELL
+constexpr double kCell = k::GRASS_CELL_METRES;
 
 struct GrassPush {
     float cornerRel[2];

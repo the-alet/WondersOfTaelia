@@ -127,7 +127,8 @@ void TreeRenderer::buildMeshes() {
                     }
                     for (int i = 0; i < sides; ++i) {
                         const uint32_t a0 = base + uint32_t(i), a1 = a0 + 1, b0 = a0 + uint32_t(sides) + 1, b1 = b0 + 1;
-                        idx.insert(idx.end(), {a0, b0, b1, a0, b1, a1});
+                        // side1 = axis x side0: go round the ring before going up for outward-facing triangles.
+                        idx.insert(idx.end(), {a0, b1, b0, a0, a1, b1});
                     }
                 }
                 m.bark[lod].indexCount = uint32_t(idx.size()) - m.bark[lod].firstIndex;
@@ -142,23 +143,32 @@ void TreeRenderer::buildMeshes() {
                     const dvec3 right = normalize(cross(up, n)), u2 = normalize(cross(n, right));
                     const double h = c.size * grow * 0.5;
                     const double sway = std::clamp(ctr.y / std::max(sk.height, 1.0f), 0.0, 1.0);
-                    const uint32_t w = uint32_t(std::lround((0.4 + 0.6 * sway) * 255.0)) | 0x100u;
+                    const double edge = std::clamp(std::hypot(ctr.x,ctr.z) / std::max(double(sk.crownRadius),1.0),0.0,1.0);
+                    const uint32_t ambient = uint32_t(std::lround((0.55+0.45*edge)*255.0));
+                    const uint32_t variation = uint32_t(mix64(uint64_t(li)+uint64_t(var)*991u)&255u);
+                    const uint32_t w = uint32_t(std::lround((0.4 + 0.6 * sway) * 255.0)) | 0x100u | (ambient<<9) | (variation<<17);
                     const uint32_t base = uint32_t(verts.size());
-                    const double corners[4][2] = {{-1, -1}, {1, -1}, {1, 1}, {-1, 1}};
-                    for (const auto& cc : corners) {
-                        const dvec3 p = ctr + right * (cc[0] * h) + u2 * (cc[1] * h);
+                    const int divisions = lod < 2 ? 2 : 1;
+                    for (int y=0;y<=divisions;++y) for(int x=0;x<=divisions;++x) {
+                        const double u=double(x)/divisions*2-1, v=double(y)/divisions*2-1;
+                        const dvec3 p = ctr + right * (u*h) + u2 * (v*h) - n*(0.12*h*(u*u+0.35*v*v));
+                        const dvec3 bent = normalize(n + right*(0.24*u) + u2*(0.084*v));
                         TreeVertex tv{};
                         tv.pos[0] = float(p.x);
                         tv.pos[1] = float(p.y);
                         tv.pos[2] = float(p.z);
-                        tv.normal = octNormal(n.x, n.y, n.z);
-                        tv.uv[0] = float(cc[0] * 0.5 + 0.5);
-                        tv.uv[1] = float(0.5 - cc[1] * 0.5);
+                        tv.normal = octNormal(bent.x, bent.y, bent.z);
+                        tv.uv[0] = float(u*0.5+0.5);
+                        tv.uv[1] = float(0.5-v*0.5);
                         tv.info = w;
                         tv.flow = leafFlow[li];
                         verts.push_back(tv);
                     }
-                    idx.insert(idx.end(), {base, base + 1, base + 2, base, base + 2, base + 3});
+                    for(int y=0;y<divisions;++y) for(int x=0;x<divisions;++x) {
+                        const uint32_t a=base+uint32_t(y*(divisions+1)+x), b=a+1;
+                        const uint32_t c0=a+uint32_t(divisions+1), d=b+uint32_t(divisions+1);
+                        idx.insert(idx.end(),{a,b,d,a,d,c0});
+                    }
                 }
                 m.leaves[lod].indexCount = uint32_t(idx.size()) - m.leaves[lod].firstIndex;
             }
@@ -243,9 +253,9 @@ void TreeRenderer::workerLoop() {
 
 float TreeCharring::at(const dvec3& p) const {
     const std::pair<int64_t, int64_t> key{int64_t(std::floor(p.x / kTreeCell)), int64_t(std::floor(p.z / kTreeCell))};
-    if (burnt && burnt->count(key)) return 1.0f;
     for (const auto& [k, amount] : burning)
         if (k == key) return amount;
+    if (burnt && burnt->count(key)) return 1.0f;
     return 0.0f;
 }
 
@@ -452,7 +462,8 @@ void TreeRenderer::buildCampfire(std::vector<TreeVertexOut>& verts, std::vector<
         for (int i = 0; i < rows; ++i)
             for (int j = 0; j < cols; ++j) {
                 const uint32_t a = base + uint32_t(i * (cols + 1) + j), b = a + 1, c = a + uint32_t(cols) + 1, d = c + 1;
-                idx.insert(idx.end(), {a, c, d, a, d, b});
+                // Both the stone's latitude rings and the log's axial rings were wound inward.
+                idx.insert(idx.end(), {a, d, c, a, b, d});
             }
     };
     // A ring of rounded stones, half sunk in the trodden ground.

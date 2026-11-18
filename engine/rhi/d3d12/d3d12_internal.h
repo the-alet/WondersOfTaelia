@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "rhi/backends.h"
+#include "rhi/gpu_profile.h"
 
 namespace taelia::rhi::d3d12 {
 using Microsoft::WRL::ComPtr;
@@ -231,6 +232,11 @@ private:
     std::unique_ptr<Buffer> ring_;
     uint64_t ringBase_ = 0, ringOffset_ = 0;
     std::unique_ptr<Buffer> zeroConstants_;
+    GpuProfile profile_;
+    ComPtr<ID3D12QueryHeap> queries_[kFramesInFlight];
+    std::unique_ptr<Buffer> queryReadback_[kFramesInFlight];
+    uint64_t timestampFrequency_ = 0;
+    void collectProfile(uint32_t slot);
 
     friend class D3D12CommandList;
     friend class D3D12Swapchain;

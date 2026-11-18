@@ -117,7 +117,7 @@ void CloudMap::step(double dt, const dvec3& wind, double seconds) {
             water = std::max(water - rain * k::WEATHER_RAIN_TAKE * span, 0.0);
             w(si, sj) = float(water);
             // A storm where clouds run into each other past the storm line: friction there charges lightning.
-            if (water > k::WEATHER_STORM && i > 0 && j > 0 && i < kN - 1 && j < kN - 1) {
+            if (k::MAGIC_LIGHTNING_ENABLED && water > k::WEATHER_STORM && i > 0 && j > 0 && i < kN - 1 && j < kN - 1) {
                 const double gx = (w(slot(U + 1), sj) - w(slot(U - 1), sj)) / (2.0 * kTexel);
                 const double gz = (w(si, slot(V + 1)) - w(si, slot(V - 1))) / (2.0 * kTexel);
                 const double front = std::clamp(std::hypot(gx, gz) / k::WEATHER_FRONT, 0.0, 1.0);

@@ -5,9 +5,9 @@ Put this file in the root of the new project as `SPEC.md`. Each session: read "R
 ## Rules
 
 ### Save tokens
-- Reply in English, short: a few lines, no recaps, no restating the request. Russian only when asked.
+- Reply in English as briefly as possible (the user's repeated preference): a few lines, no recaps, no restating the request. Russian only when explicitly asked.
 - No Workflow and no multi-agent reviews unless the user asks: they used up the 5-hour limit twice with nothing to show.
-- Hand light, self-contained chores to subagents on the cheapest model (Agent tool, `model: "haiku"`); keep the heavy work yourself. Subagents use the same limit, only cheaper, and start cold, so a chore a couple of tool calls settle stays with you.
+- Hand light, self-contained chores to subagents on a budget model (currently `gpt-6-luna` in Codex; `haiku` where available); choose the cheaper model explicitly and keep the heavy work yourself. Subagents use the same limit, only cheaper, and start cold, so a chore a couple of tool calls settle stays with you.
   - Give them: searches across many files, reading long logs and reporting only errors, running builds, tests and the game and reporting the result, measuring screenshots, edits you have fully specified.
   - Keep yourself: design, shaders, physics, the magic rules, anything that needs the conversation's context, the final look at frames.
   - Brief them in a few lines (files, exact steps, what done looks like), ask for at most 10 lines back, check their changes before reporting. At most 2–3 at a time; keep working while they run.
@@ -15,20 +15,24 @@ Put this file in the root of the new project as `SPEC.md`. Each session: read "R
 - Put independent tool calls in one message; chain shell steps in one command. Filter build output to errors. Run the full test suite once, at the end of a task; run long jobs in the background.
 - Screenshots: shrink to at most 1280 px JPEG before looking, crop for details, measure pixels as numbers when you can, 2–3 frames per check.
 - Targeted edits, never full rewrites. No planning documents. Ask only when truly blocked, one question at a time. Don't start plugins or skills unless asked.
+- Use NVIDIA Skills and Unreal Engine Skills for Codex for relevant development (the user). Load the matching available instructions; record unavailable SDK/editor connections honestly and keep independent work moving.
 
 ### Keep this file current
 - When the user changes or adds a rule, update the matching line here in the same turn. This file, not the conversation, is the current truth.
+- One primary project chat coordinates the work. Before resuming, read this file and inspect the actual Git branch, HEAD and working changes; reconcile old session summaries with them. When combining sessions, bring their pending requirements and changes into the primary chat before closing the other one.
+- Give helpers disjoint files or separate worktrees. Only one session at a time may switch branches, stage, commit, push, or run builds/tests in a shared checkout; agree on ownership before overlapping work and never overwrite another session's edits.
 - Done means: it builds clean on D3D12 and Vulkan (and in Unreal once ported), the tests pass, and a frame of the change was checked.
 
 ### Hard rules
 - Folder name = project name. Install every tool, SDK and cache inside the project folder (`.local`, ignored by git).
 - Never change antivirus or other security settings. Kaspersky may flag the game's exe as a trojan; the user handles it.
 - Don't modify engine files of an installed Unreal Engine.
-- No Lumen, no V-Sync. Don't measure performance until the user asks.
+- No Lumen, no V-Sync. Show measured FPS, frame time, renderer, resolution and useful simulation counts. After completing the requested list, the user authorizes graphics profiling and optimization; finish the environment work first, then measure bottlenecks. Do not invent GPU timings.
 - Automated runs must never take focus or react to the real mouse.
 - Git: don't commit or push unless asked. The user works with git in GitHub Desktop.
 - The world is invented: as few objects from the real world as possible, in the sky, on the land and in names. Make up your own instead of borrowing.
-- No spawn or creation keys. No random crates, logs or rolling balls in the world.
+- Triangle winding and face culling must agree on both backends: exterior faces stay visible and back faces are culled on solid meshes. Keep deliberately thin foliage and water two-sided.
+- No spawn or creation keys except the user's RMB rune drawing. No random crates, logs or rolling balls in the world.
 - UI text in English.
 - Use the Visual Studio compiler already installed; only if none is found, install one inside the project folder.
 - Never run `python -` in Bash: it hangs on stdin. Write a script file instead.
@@ -37,20 +41,36 @@ Put this file in the root of the new project as `SPEC.md`. Each session: read "R
 - C++20, CMake with presets, MSVC. Our own engine: one RHI over D3D12 and Vulkan, shaders in HLSL built to DXIL and SPIR-V. Hardware ray tracing. DLSS Super Resolution and Reflex through NVIDIA Streamline as an option (the user accepted its licence; it asks to notify NVIDIA before a commercial release).
 - The simulation (world, physics, magic, weather, sky) is a library with no engine or graphics code in it, from day one. The renderer and, later, an Unreal 5.8 port are front ends over it, and every change goes into both.
 - Numbers shared by C++, shaders and the Unreal materials live in one place and are generated into the others, not copied by hand.
+- Optional graphics profiling: `--gpu-profile=<file.csv>` records GPU command-list and inclusive pass timestamps on D3D12 and Vulkan after their fences complete. `.utilities/gpu_profile.py` summarizes captures after warmup; nested passes overlap and must not be summed. These timings exclude CPU work and presentation. Profiling is off by default.
+- Collision frame checks can use `--magic-shot=aspect,x,y,z,kg,vx,vy,vz[,frame]` (repeatable, automated runs only). The y coordinate is above terrain/water; default frame 2. This uses the same projectile simulation as player throws, with no creation key.
 - A test executable for the simulation from day one, run through ctest.
 - Positions in double precision; render relative to the camera. Noise and hashes at large coordinates use integer mixing, not sin(), which runs out of precision and tears into straight edges far away.
 - A fixed simulation step, deterministic from a world seed: the same flags give the same frame, so shots and tests repeat. Time speed changes how many steps run, not their size; fast fields (magic, fire) take smaller sub-steps so x50 stays stable.
-- Launch flags for checks from the start: `--hour=`, `--time-step=` (x1 by default), `--camera=x,y,z,yaw,pitch`, `--ground=<m above ground>`, `--magic`, `--rain=0..1`, `--throws=N`, `--frames=N`, `--shot=<file>`, `--inject=aspect,x,y,z,kg`; for the player `--player=x,z,yaw`, `--player-camera=yaw,pitch,dist`, `--first-person`, `--act=run|crouch|crouchrun|jump|dash|swim|tread|fly|hover|gather|throw`, `--aspect=name` (`--camera` keeps the free camera of the checks instead). With `--frames` the game writes a screenshot and quits, without taking focus. All utility scripts (fetching the toolchain, running the game for frames, shrinking and measuring frames) live in `.utilities/`.
+- Launch flags for checks from the start: `--hour=`, `--time-step=` (x1 by default), `--camera=x,y,z,yaw,pitch`, `--ground=<m above ground>`, `--magic`, `--rain=0..1`, `--throws=N`, `--frames=N`, `--shot=<file>`, `--inject=aspect,x,y,z,kg`; for the player `--player=x,z,yaw`, `--first-person`, `--act=run|crouch|crouchrun|jump|dash|swim|tread|fly|hover|gather|throw|draw-rune`, `--aspect=name` (`--camera` keeps the free camera of the checks instead). With `--frames` the game writes a screenshot and quits, without taking focus. All utility scripts (fetching the toolchain, running the game for frames, shrinking and measuring frames) live in `.utilities/`.
 
 ## The world
 
 ### Camera and controls
-- The human is the player (the user). The camera rides it: third person over its right shoulder, V for first person (from its eyes, its head not drawn). Checks with `--camera` keep a free camera, speed fixed at 10 (no mouse wheel).
+- The human is the player (the user). First-person view only: the camera is inside the head at the animated eyes, with its head hidden from its own view. No V toggle or third-person view. Automated checks with `--camera` can use a free camera.
 - Moves (the user), each with its own animation, blended: W A S D run (4.2 m/s), Space jumps (about 1.3 m), C or Ctrl crouches (slower), Shift dashes (a short burst), F flies (Space rises, C sinks), deep water swims (breaststroke; treading water when still). The body turns toward where it goes; it leans into turns.
 - The eye's focus moves first and the camera follows it with damping: inside a neutral circle of 5% around the camera's direction it doesn't turn; past 80% of the field of view it is pulled hard toward the gaze. Field of view about 10% narrower than usual; a generous focus area.
 - Nothing about the camera is abrupt (the user): turns ease in and out, flight eases to its speed and to a stop, the mouse moves the gaze at a moderate rate.
 - Blur outside the focus: almost none at the focus edge, strong at the screen edge, with 5% darkening at the very edge.
-- Magic ball (the user): the number keys choose the magic (1 earth, 2 water, 3 life, 4 fire, 5 air, 6 lightning, 7 light, 8 necrotic). Holding LMB gathers a ball of it between the hands, drawing that aspect and neutral magic from the field round them (up to 8 m, more from nearer); from neutral magic it fills slower (0.3 as fast: it must take the aspect). Full at 240 kg. Letting go throws it at the ground under the gaze (a click's worth is let go where it is). Magic is weightless, so it flies straight until it hits the ground, water or a trunk (or 80 m out) and bursts, everything it holds going into the field there, where the usual rules act. Its own animations: palms round the growing ball, the throwing arm.
+- Magic ball (the user): the number keys choose the magic (1 earth, 2 water, 3 life, 4 fire, 5 air, 6 light, 7 necrotic). Holding LMB gathers a ball of it between the hands, drawing that aspect and neutral magic from the field round them (up to 8 m, more from nearer); from neutral magic it fills slower (0.3 as fast: it must take the aspect). Full at 240 kg, radius 0.24 m (enlarged). Letting go throws it along the gaze (a click's worth is let go where it is). Magic is weightless and flies straight. It loses 1 kg per travelled metre into the surrounding field (shared constant), shrinking as it empties. It interacts with ground, water, plants, physical balls, minerals and runes at the first swept contact, releasing its remaining magic there; dense moving magic pushes matter only above 50 kg/m³; only earth magic dents terrain, while fire contact past 30 heats water and burns plants. Its own animations: palms round the growing ball, the throwing arm.
+- Hold RMB to draw the selected aspect's rune 3 m along the gaze, or on a nearer surface. The whole 0.5 m sign must fit; narrow or curved surfaces instead get a suspended sign in front. Strokes draw progressively along their lines: under 1 second leaves an incomplete, inert sign; 1–5 seconds completes and charges it, up to 50 kg/m³ at 5 seconds. User-drawn signs seal at 150 kg/m³ (normal pressure break remains 1.5 times the seal). Drawing creates no solid carrier. Use more intricate invented glyphs.
+- Overcharging destabilizes balls and runes (the user). A rune held beyond 5 seconds flickers and cracks, releasing its contents if held another 3 seconds. A ball held full for 2 seconds starts destabilizing and bursts after another 3 seconds. Releasing before failure stops the overcharge; thresholds are shared tuning constants.
+- Only earth magic balls may deform or destroy terrain. Other aspects affect their surroundings through their own interactions, without cratering the ground.
+- At full charge, a ball creates a small physical manifestation of its aspect, except life magic (the user's clarification). Pay for that manifestation from its contents; this is not extra magic emission.
+- Remove lightning from player selection and direct creation for now. Keep its internal slot reserved for a future derived aspect; direct conversion and weather lightning are deferred.
+- Water extinguishes existing fire, air/wind feeds it, and fire magic only boosts an existing fire temporarily. Newly heated plants can still catch under the established dense-fire rule.
+- An extinguished campfire can be relit by fire magic once water no longer quenches it; wind alone cannot ignite a cold bed.
+- Life magic restores dead or burnt trees, gradually rebuilding their living state and foliage from supplied life magic.
+- Magic-ball collisions show a short, depth-tested impact effect at the actual contact point: aspect-coloured embers, droplets, fragments or flowing filaments with a brief soft glow and natural fading. Improve the effects before concentrating development on measured graphics optimization (the user).
+- A magic ball with less than 30 units (kg) remaining at impact causes no impact visual or environmental action, including ignition; use its remaining charge after travel loss, not its initial charge or concentrated density. A weak impact disperses harmlessly as neutral magic without impact momentum.
+- Necrotic contact spreads through living ground cover, withers grass, and strongly stains earth, water, fire and air grey-violet. Grass keeps its exposure damage after the cloud disperses.
+- Light and necrotic magic completely neutralize equal amounts on contact, returning their combined amount to neutral magic; any excess of either remains.
+- Necrotic contamination disperses slowest in earth, then water, then fire, and fastest in air (the user). Use medium-dependent retention and diffusion; concentrated exposure stains quickly, release follows this ordering.
+- Environment realism: fine soil grains and plant litter with rotated texture blending, curved grass tufts with varied density, folded leaf clusters with veins and crown shading, weathered bark, local contact shadows, restrained highlights and irregular wind-bent fire. Preserve the invented species and calm untextured pond water. Check matching day, night, overcast and shoreline frames on D3D12 and Vulkan before graphics optimization.
 - Esc: menu with graphics settings, a controls tab, exit. More polygons at the highest detail. `/`: world settings (wind, time speed and so on). `+`/`-`: time speed from x1/50 to x50; everything, magic and fire included, follows it. `M`: magic view.
 - A few lines in the top-left corner: time, wind, and the magic at the camera by aspect, in kg/m³.
 
@@ -63,7 +83,7 @@ Put this file in the root of the new project as `SPEC.md`. Each session: read "R
 ### Land, water, plants
 - Uneven generated terrain with normal maps and textures.
 - Water is a liquid in basins with a shaped bed, not a plane at height 0. Separate ponds have no waves.
-- Water is see-through, from above and from under its surface (the user): the bed shows a few metres off with sunlight playing on it, things fade into the water's colour with distance; from below the world above shows through a window overhead and past it the surface mirrors the water.
+- Water is see-through, from above and from under its surface: the bed shows a few metres off, things fade into the water's colour with distance; from below the world above shows through a window overhead and past it the surface mirrors the water. Remove the visible procedural water texture (the user): no ripple-normal or caustic-net pattern; retain calm reflections, refraction and depth absorption.
 - Realistic trees. Grass as blade models with a blade texture, not green-painted ground, out to 150 m at the highest detail (the user: farther); past the finest terrain tiles the blades stand on coarser ones.
 - A campfire near the spawn point.
 
@@ -83,12 +103,13 @@ Put this file in the root of the new project as `SPEC.md`. Each session: read "R
 - Rain: thin streaks at several depths, in front of whatever is farther, slanted by the wind; under it everything is a little greyer. Never a flat texture.
 - Under a closed sky the suns' discs don't show, direct light is mostly gone, ambient light turns grey.
 - Smoke and steam; fire is volumetric and reflected in water.
+- Tree fire begins at the actual ignition point, including the crown, then spreads along the tree; heat and visible flames use the same source positions.
 
 ## Magic
 
 ### What it is
 - A gas measured in kg/m³. Weightless: gravity ignores it, and in every formula its amount stands in for mass. It swirls and flows like air, with weak streams and diffusion. It exists everywhere up to about 2 km and is simulated around the camera.
-- Aspects and colours: earth brown, water light-to-deep blue, air green-turquoise, life dark green (the user: nature and life magic are one, life magic), necrotic grey-violet, fire orange, lightning violet, light white, neutral.
+- Aspects and colours: earth brown, water light-to-deep blue, air green-turquoise, life dark green (the user: nature and life magic are one, life magic), necrotic grey-violet, fire orange, light white, neutral. Lightning's internal slot is reserved; it is disabled for now.
 - Neutral magic flows through space, takes an aspect from matter it passes through and slowly loses it afterwards. In air, about half is air magic and half neutral.
 - Near the ground earth magic dominates, near water water magic, each up to 2–3 kg/m³ and never dense away from its matter. Life magic only near plants, weak.
 - Inertia, most to least: earth, water, necrotic, life, fire, air, light. Each aspect evens out its own density.
@@ -108,14 +129,14 @@ Describe magic by the kinetic theory of gases. Work it as a continuous field on 
 ### Fire, lightning, light
 - Fire magic comes from hot things: more for more volume and more heat (campfires, lava). Ground heated by the suns counts; the suns themselves don't.
 - It heats the air (instead of modelling heat transfer) and rises a little, enough to make streams of air magic. Around a fire it is thinner farther out.
-- Air magic around a fire: if fire magic outweighs it, the wind feeds the fire like oxygen; otherwise it blows the fire magic away and the fire slowly dies down.
+- Air magic and wind feed an existing fire; water extinguishes it. Added fire magic boosts it temporarily, then that boost decays.
 - Steam and burning plants need dense fire magic: past the dew point, 30 kg/m³ (the user's answer; 8.5 no longer holds).
-- Under pressure fire magic turns to lightning, under more pressure to light (first numbers: 675 and 1100).
-- Lightning comes from friction of mixed water and air magic in clouds. A strike sets off nothing by script: whatever it causes comes through the fire magic it leaves.
+- Deferred derived-aspect design: pressure conversion from fire to lightning/light (675 and 1100) is disabled until lightning is implemented again.
+- Deferred with lightning: friction of mixed water and air magic in clouds produces strikes, whose effects would come through the fire magic they leave.
 
 ### Dense aspects show
 - Air makes a whirlwind, water a current, earth minerals, fire fire, life plants, light fireflies (light, not insects). Minerals and plants stay after the magic thins.
-- Thresholds per aspect (first numbers: light 40, air 35, life 38, water 40, fire 45, earth 50). Necrotic magic does not manifest.
+- Thresholds per aspect (first numbers: light 40, air 35, life 38, water 40, fire 45, earth 50). Free necrotic gas does not automatically condense; a fully charged necrotic ball makes a small temporary dust cloud under the full-charge rule.
 - Fireflies: 3 at a density of 40, plus 1 for every 3 more. Ten together merge into a big one that sends out waves of light magic of density 1.
 
 ### Light drops
@@ -129,8 +150,8 @@ Describe magic by the kinetic theory of gases. Work it as a continuous field on 
 ### Necrotic magic (the user; first numbers)
 - An aspect of its own, grey-violet, its motes heavier than life's. It mixes with the other aspects like any of them.
 - It very slowly absorbs life magic (at 0.00005 x necrotic x life per second), growing by only 0.7 of what it takes (the user); the rest goes back to neutral.
-- Without life magic round it to feed on (less than 0.05 kg/m³) it very slowly fades into neutral (over about an hour).
-- Things take it up like any held magic (evening out with it over about 10 minutes) and take on its tint by how much they hold: half at 0.5 kg/m³ (nothing makes it yet, so any of it shows), in plain sight and in the magic view.
+- Without life magic round it to feed on (less than 0.05 kg/m³), it fades into neutral with retention longest in earth, then water, fire and air. Initial decay time constants are 1200, 600, 180 and 45 seconds respectively; diffusion follows the same order.
+- Earth, water, fire and air stain quickly under concentrated necrotic exposure (initial uptake time 1.5 seconds), then lose their tint with their medium's retention time. Light clears necrotic contamination by mutual neutralization. Grass keeps its withering damage after contamination is gone.
 - Living things lose their life magic to the necrotic magic they hold. A thing filled only with life magic (a thrown ball, a sprout) crumbles to dust when it falls apart, and the necrotic magic in it goes out into the field round it (the user). The human and plants hold water too, so they do not crumble.
 - It comes from death (the user): a living thing that dies with life magic still in it leaves that as necrotic magic where it was (a sprout withering away). Not by fire: a burnt-out tree or burnt grass leaves none (the user). `--inject=necrotic,...` for checks.
 
@@ -158,16 +179,18 @@ Describe magic by the kinetic theory of gases. Work it as a continuous field on 
 - Its life magic is densest in the heart and the brain (the user), and flows like blood (the user; simplified for now): out from the heart through the arteries with each heartbeat (to the brain, the arms and hands, the legs and feet), back through the veins. In the magic view the vessels glow through the body, pulses running down them with each beat.
 - Lungs and air magic (the user): two lungs either side of the heart, airways from the nose and mouth down the windpipe into them. Air magic flows in with each breath and out again (faster breaths when it runs); in the magic view the airways glow turquoise with beads riding the air, and the lungs fill.
 
-## Next: runes (first numbers, tune them)
-A rune is a sign carved or drawn on a thing that holds magic as a closed system: very dense inside, but up to its seal none of it reaches the world.
-- Data: one aspect (neutral magic that enters takes it); a volume V set by its size (0.5 m across is about 0.1 m³); a seal S in kg/m³ by material (wood 400, stone 600, metal 900); a break point B = 1.5 S; contents in kg per aspect.
-- Closed (density up to S): no diffusion, no drift, no fading of the aspect, no change under pressure, no forces, no bent light, no manifestations, nothing toward the weather. To the magic field the rune doesn't exist.
-- Filling, the only way in: magic of its aspect, or neutral, denser than 30 where the rune is, is drawn in at a rate proportional to (density outside - 30). Thinner magic and other aspects pass by, so in ordinary surroundings a rune is inert.
+## Runes (first numbers, tune them)
+A rune is a sign carved or drawn on a thing that confines its magic except for its regulated exchange toward half capacity, over-seal leakage and breaking.
+- Data: one aspect (neutral magic that enters takes it); a volume V set by its size (0.5 m across is about 0.1 m³); a seal S in kg/m³ by material for existing carriers (wood 400, stone 600, metal 900), or 150 for player-drawn signs; a break point B = 1.5 S; contents in kg per aspect.
+- Closed (density up to S): no passive diffusion, drift, fading, pressure conversion, forces, bent light or manifestations. The deliberate half-capacity exchange below is the exception.
+- After drawing, a completed rune gradually approaches half its capacity (density S/2; 75 for player-drawn signs), absorbing available neutral or matching-aspect magic when below it and releasing its excess when above it. Neutral becomes the rune's aspect; other aspects pass by. It cannot absorb energy that is not available. This replaces the old intake-only-above-30 rule. The initial RMB charge follows the 1–5 second rule above; incomplete signs stay inert.
+- Drawing prioritizes a nearby supporting surface. If the full sign cannot fit, move its whole plane clear of the obstruction before suspending it in air; never leave part of an air rune embedded in the surface.
 - Over the seal (S < density <= B): the excess leaks out by effusion (see the kinetic theory section), as a jet into the field, where the usual rules take over.
-- Breaking (density over B, its carrier falls apart, or the sign is damaged): everything comes out at once around it and the rune is gone; the usual rules act at once (fire past 675 turns to lightning, past 1100 to light, above 50 it pushes bodies, above the thresholds it manifests).
-- Plain sight sees only the carving. The magic view shows the rune in its shape and aspect colour, brighter the fuller, flickering over the seal.
-- Tests: below the seal the field around stays unchanged; intake only above 30 and only of its aspect; the leak grows with the excess; a break releases everything; a fire rune past 675 stays fire inside and turns to lightning once out.
-- No keys to make runes. Ask before putting one in the world.
+- Breaking (density over B, its carrier falls apart, the sign is damaged, or drawing is overcharged): everything comes out at once around it and the rune is gone. Released magic follows the field's physics and manifestation thresholds; pressure conversion remains disabled with lightning.
+- The carrier is a standing stone, a hewn wooden post, or a cast metal plate, set into the ground. Shared dimensions place the box collider and the rounded, weathered render mesh; the future Unreal front end uses the same dimensions. Wood holds life magic; stone and metal hold earth magic. If its held magic falls below 5% of its share, the carrier crumbles and breaks the rune.
+- Plain sight sees the material and the carved sign. The magic view shows the sign's invented glyph in its aspect colour, brighter the fuller, flickering over the seal; the carrier glows with its material's held magic.
+- RMB drawing is authorized by the user with the 3 m reach, timed strokes, charge and instability rules above. No solid carrier is spawned by drawing. The repeatable check-only flag `--rune=aspect,material,x,y,z,kg/m3[,yaw]` still places carrier examples for automated frames; `--act=draw-rune` exercises held RMB without real mouse input. Ask before adding pre-placed runes to the default world.
+- Tests: a half-full rune is balanced; only available matching or neutral magic fills it, excess returns to the field without overshooting half capacity, and incomplete signs stay inert; over-seal leakage and breaking still work; released fire stays fire while lightning is disabled; carrier shape and collider agree. Check surface priority, full-plane clearance, timed charge and overcharge failure too.
 
 ## Proposals from Claude (not agreed: ask the user before building any)
 - A magic budget: name every source (heat, the suns, ...) and every sink (growth of life, manifestations, runes, ...), show the total around the camera in the corner, and test that a closed box keeps it. Without it densities run away, as the storm sheet did in the first attempt.

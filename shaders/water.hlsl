@@ -1,5 +1,5 @@
 // Ponds: liquid at each pond's own level over its irregular shore shape (out to the footprint, where the bank keeps
-// the land above the water). Calm: no waves, only faint wind ripples. Light through the water is absorbed by depth.
+// the land above the water). Calm and untextured; light through the water is absorbed by depth.
 #include "common.hlsli"
 #include "sky.hlsli"
 #include "rt.hlsli"
@@ -53,25 +53,6 @@ VSOut VSMain(uint vid : SV_VertexID, uint iid : SV_InstanceID) {
     o.rel = float3(p.centerLevel.x + cos(angle) * radius, p.centerLevel.y, p.centerLevel.z + sin(angle) * radius);
     o.pos = mul(g_frame.viewProj, float4(o.rel, 1));
     return o;
-}
-
-float rippleNoise(float2 p, int period) {
-    // Value noise on a lattice that wraps every `period` cells (the cells divide 256 m, so the camera wrap stays seamless).
-    float2 i = floor(p), f = p - i;
-    f = f * f * (3.0 - 2.0 * f);
-    int2 c = ((int2(i) % period) + period) % period;
-    int2 d = (c + 1) % period;
-    float a = float(pcgHash(uint(c.x) + pcgHash(uint(c.y))) & 0xffffu) / 65535.0;
-    float b = float(pcgHash(uint(d.x) + pcgHash(uint(c.y))) & 0xffffu) / 65535.0;
-    float e = float(pcgHash(uint(c.x) + pcgHash(uint(d.y))) & 0xffffu) / 65535.0;
-    float g = float(pcgHash(uint(d.x) + pcgHash(uint(d.y))) & 0xffffu) / 65535.0;
-    return lerp(lerp(a, b, f.x), lerp(e, g, f.x), f.y);
-}
-
-float rippleHeight(float2 xz) {
-    // Faint, irregular cat's-paws drifting downwind; xz is world position modulo 256 m.
-    const float2 drift = g_frame.wind.xz * g_frame.time.z * 0.15;
-    return rippleNoise((xz - drift) * 2.0, 512) + 0.5 * rippleNoise((xz - drift * 1.3) * 4.0, 1024);
 }
 
 // What the calm surface mirrors: the sky, or (ray traced) the land and trees around the pond as dim silhouettes.
@@ -163,14 +144,8 @@ float4 PSMain(VSOut i) : SV_Target0 {
     const float3 V = -normalize(i.rel);
     const float dist = length(i.rel);
 
-    // Ripples: barely there in calm air, a touch more with wind, gone with distance.
-    const float2 xz = g_frame.cameraWrap.xz + i.rel.xz;
-    const float e = 0.05;
-    const float strength = 0.012 + 0.02 * saturate(length(g_frame.wind.xz) / 8.0);
-    const float fade = saturate(1.0 - dist / 90.0);
-    const float hx = rippleHeight(xz + float2(e, 0)) - rippleHeight(xz - float2(e, 0));
-    const float hz = rippleHeight(xz + float2(0, e)) - rippleHeight(xz - float2(0, e));
-    const float3 n = normalize(float3(-hx * strength * fade / (2 * e), 1.0, -hz * strength * fade / (2 * e)));
+    // The user requested clear, calm water without a procedural surface pattern.
+    const float3 n = float3(0, 1, 0);
 
     // How much water the light crosses before reaching the bed behind this pixel.
     const float sceneDepth = g_tex2D[g_push.depth].SampleLevel(s_pointClamp, screenUv, 0).r;
@@ -185,7 +160,7 @@ float4 PSMain(VSOut i) : SV_Target0 {
     // The bed lies this deep: the daylight reaching it crossed that much water first.
     const float3 bed = dir * min(sceneDist, dist + 60.0);
     const float bedDepth = max(i.rel.y - bed.y, 0.0);
-    const float3 refracted = throughWater(behind * waterDepthLight(bedDepth) * waterCaustics(bed, bedDepth), thickness, bedDepth * 0.5);
+    const float3 refracted = throughWater(behind * waterDepthLight(bedDepth), thickness, bedDepth * 0.5);
 
     if (magicView()) {  // no reflections; the water glows with the magic it holds, the free magic in front of it
         const float dist = length(i.rel);
@@ -202,10 +177,13 @@ float4 PSMain(VSOut i) : SV_Target0 {
     float3 glints = 0;
     [unroll] for (uint s = 0; s < 2; ++s) {
         const float3 L = g_frame.suns[s].xyz, H = normalize(L + V);
-        const float a = 0.02, a2 = a * a, NoH = saturate(dot(n, H));
+        const float a = max(0.035, g_frame.sunLight[s].w), a2 = a * a, NoH = saturate(dot(n, H));
         const float d = NoH * NoH * (a2 - 1.0) + 1.0;
-        const float glint = a2 / (3.14159 * d * d) * F * 0.25 * saturate(dot(n, L));
-        glints += g_frame.sunLight[s].rgb * (1.0 - g_frame.suns[s].w) * sunTransmittance(L) * cloudShadow(s, i.rel) * min(glint, 60.0);
+        const float NoV = max(dot(n,V),0.001), NoL = saturate(dot(n,L));
+        const float fresnel = 0.02 + 0.98 * pow(1.0-saturate(dot(V,H)),5.0);
+        const float visibility = 0.5 / max(NoL*sqrt(NoV*NoV*(1.0-a2)+a2) + NoV*sqrt(NoL*NoL*(1.0-a2)+a2),0.001);
+        const float glint = a2 / (3.14159*d*d) * fresnel * visibility * NoL;
+        glints += g_frame.sunLight[s].rgb * (1.0 - g_frame.suns[s].w) * sunTransmittance(L) * cloudShadow(s, i.rel) * min(glint, 12.0);
     }
     float3 color = necroticTint(lerp(refracted, reflected, F), necroticAmount(i.rel)) + glints;  // what it holds of necrotic magic
     color = applyHaze(color, i.rel);

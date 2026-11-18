@@ -6,6 +6,7 @@
 #define TAELIA_FIRE_HLSLI
 
 #include "common.hlsli"
+#include "magic.hlsli"
 #include "atmosphere.hlsli"
 
 float fireStrength() { return g_frame.fire.w; }
@@ -39,14 +40,16 @@ void fireAt(float3 p, float s, out float3 emit, out float smoke) {
     const float y = p.y / height;
     if (y > 0.0 && y < 1.15) {
         // A teardrop, licked upward by noise that rises through it.
+        p.xz -= g_frame.fireInfo.yz * (0.045*y*y*k);
         const float3 q = p / k;
         const float w = radius * pow(saturate(1.0 - y), 0.65) * saturate(y * 6.0 + 0.25);
         const float n = fireFbm(float3(q.x * 3.1, q.y * 2.2 - t * 3.4, q.z * 3.1));
-        const float d = length(p.xz + (n - 0.5) * 0.35 * k * y) / max(w, 1e-3);
-        const float body = saturate(1.0 - d) * smoothstep(0.32 + 0.08 * (k - 1.0), 0.7, n + 0.55 * (1.0 - y));
+        const float twist = fireNoise(float3(q.z*5.0,q.y*3.0-t*2.7,q.x*5.0)+17.0);
+        const float d = length(p.xz + float2(n-0.5,twist-0.5) * 0.55 * k * y) / max(w, 1e-3);
+        const float body = (1.0-smoothstep(0.25,1.0,d)) * smoothstep(0.36+0.17*y,0.78,n+0.35*(1.0-y));
         const float heat = saturate(1.15 - y * 1.1 - d * 0.35);  // hottest low and in the middle
-        const float3 color = lerp(float3(1.0, 0.22, 0.03), float3(1.0, 0.8, 0.45), heat * heat);
-        emit = color * body * (2.0 + 22.0 * heat * heat) * min(s, 1.0) / k;
+        const float3 color = lerp(float3(1.0, 0.12, 0.012), float3(1.0, 0.65, 0.22), heat * heat);
+        emit = color * body * (1.5 + 13.0 * heat * heat) * min(s, 1.0) / k;
     }
     // Smoke: a widening column above the flame, carried off by the wind as it rises.
     const float above = p.y - height * 0.8;
@@ -54,6 +57,8 @@ void fireAt(float3 p, float s, out float3 emit, out float smoke) {
         const float2 drift = g_frame.fireInfo.yz * (above / 2.2);
         const float2 q = p.xz - drift;
         const float rw = 0.25 + 0.22 * above;
+        // Density is exactly zero outside the column; avoid three noise octaves for empty samples.
+        if (dot(q,q) >= rw*rw) return;
         const float n = fireFbm(float3(q.x * 0.9, above * 0.7 - t * 0.9, q.y * 0.9));
         smoke = saturate(1.0 - length(q) / rw) * smoothstep(0.4, 0.8, n) * 0.3 * s * saturate(1.0 - above / 9.0);
     }
@@ -86,6 +91,7 @@ float4 marchOneFire(float4 fire, float3 origin, float3 dir, float maxT, float di
         float3 e;
         float sm;
         fireAt(p, s, e, sm);
+        e = necroticTint(e, necroticAmount(p + bed));
         // Smoke is grey, warmed by the flame only low down.
         const float3 smokeLit = smokeAmbient + float3(1.0, 0.45, 0.15) * 0.12 * s * exp(-max(p.y - 1.0, 0.0) / 1.2);
         sum += T * (e + sm * smokeLit) * dim * dt;
@@ -101,6 +107,7 @@ float steamAt(float3 p, float s) {
     const float t = fireTime();
     const float2 q = p.xz - g_frame.fireInfo.yz * (p.y / 1.6);
     const float rw = (0.45 + 0.17 * p.y) * sqrt(s);
+    if (dot(q,q) >= rw*rw) return 0.0;
     const float n = fireFbm(float3(q.x * 1.3, p.y * 0.8 - t * 1.3, q.y * 1.3));
     const float fade = pow(saturate(1.0 - p.y / 7.5), 1.5);
     return smoothstep(1.0, 0.35, length(q) / rw) * smoothstep(0.35, 0.75, n) * 0.6 * s * fade * smoothstep(0.0, 0.25, p.y);
@@ -138,7 +145,7 @@ float4 marchSteam(float4 st, float3 origin, float3 dir, float maxT, float dim) {
 // The campfire, then the flames where fire condensed or trees burn, then steam over water.
 float4 marchFire(float3 origin, float3 dir, float maxT, float dim) {
     float4 r = marchOneFire(g_frame.fire, origin, dir, maxT, dim);
-    [unroll] for (uint i = 0; i < 3; ++i) {
+    [unroll] for (uint i = 0; i < K_FIRE_VISIBLE_SOURCES; ++i) {
         if (g_frame.flames[i].w <= 0.01) continue;
         const float4 f = marchOneFire(g_frame.flames[i], origin, dir, maxT, dim);
         r = float4(r.rgb + f.rgb * r.a, r.a * f.a);
@@ -170,7 +177,7 @@ float3 fireLight(float3 rel, float3 n) { return flameLight(g_frame.fire, rel, n)
 
 float3 otherFlamesLight(float3 rel, float3 n) {
     float3 l = 0;
-    [unroll] for (uint i = 0; i < 3; ++i) l += flameLight(g_frame.flames[i], rel, n);
+    [unroll] for (uint i = 0; i < K_FIRE_VISIBLE_SOURCES; ++i) l += flameLight(g_frame.flames[i], rel, n);
     return l;
 }
 

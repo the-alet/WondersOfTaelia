@@ -21,7 +21,7 @@ bool MagicBallRenderer::init(rhi::Device* device, std::string* error) {
     d.ps = "magic_ball.PSMain";
     d.colorFormats[0] = rhi::Format::RGBA16_FLOAT;
     d.colorCount = 1;
-    d.blend[0] = rhi::Blend::Additive;
+    d.blend[0] = rhi::Blend::Premultiplied;
     d.depthFormat = gbuffer::kDepth;
     d.depthTest = true;
     d.depthWrite = false;
@@ -29,23 +29,29 @@ bool MagicBallRenderer::init(rhi::Device* device, std::string* error) {
     d.cull = rhi::Cull::None;
     d.name = "magic balls";
     pipe_ = device_->createGraphicsPipeline(d, error);
+    d.blend[0] = rhi::Blend::Alpha;
+    d.name = "physical condensates";
+    physicalPipe_ = device_->createGraphicsPipeline(d, error);
     d.vs = "magic_ball.DustVS";
     d.ps = "magic_ball.DustPS";
     d.blend[0] = rhi::Blend::Alpha;
     d.name = "dust";
     dustPipe_ = device_->createGraphicsPipeline(d, error);
-    return pipe_ && dustPipe_;
+    return pipe_ && dustPipe_ && physicalPipe_;
 }
 
 void MagicBallRenderer::shutdown() {
     pipe_.reset();
     dustPipe_.reset();
+    physicalPipe_.reset();
     instances_.clear();
+    physical_.clear();
     dust_.clear();
 }
 
 void MagicBallRenderer::update(const std::vector<RenderMagicBall>& balls, const std::vector<RenderDust>& dust, const dvec3& cam) {
     instances_.clear();
+    physical_.clear();
     dust_.clear();
     for (const RenderDust& d : dust) {
         const dvec3 rel = d.position - cam;
@@ -69,15 +75,25 @@ void MagicBallRenderer::update(const std::vector<RenderMagicBall>& balls, const 
         g.aspect = float(b.aspect);
         g.fill = float(b.fill);
         g.seed = float(b.id % 977u) * 0.173f;
-        instances_.push_back(g);
+        g.pad = b.physical ? -1.0f : float(b.instability);
+        if (b.impactAge >= 0) {
+            g.fill = float(b.impactAge);
+            g.pad = 2.0f;
+            g.normal[0] = float(b.impactNormal.x);
+            g.normal[1] = float(b.impactNormal.y);
+            g.normal[2] = float(b.impactNormal.z);
+        }
+        if (b.physical) physical_.push_back(g);
+        else instances_.push_back(g);
     }
 }
 
 void MagicBallRenderer::draw(rhi::CommandList* cmd, const rhi::Transient& fc, rhi::Texture* hdr, rhi::Texture* depth) {
-    if ((instances_.empty() && dust_.empty()) || !pipe_ || !dustPipe_) return;
+    if ((instances_.empty() && dust_.empty() && physical_.empty()) || !pipe_ || !dustPipe_) return;
     cmd->beginMarker("magic balls");
     std::vector<InstanceGpu> all = dust_;
     all.insert(all.end(), instances_.begin(), instances_.end());
+    all.insert(all.end(), physical_.begin(), physical_.end());
     rhi::Transient tr = device_->allocTransient(all.size() * sizeof(InstanceGpu));
     std::memcpy(tr.cpu, all.data(), all.size() * sizeof(InstanceGpu));
     cmd->barrier(hdr, rhi::State::RenderTarget);
@@ -91,6 +107,12 @@ void MagicBallRenderer::draw(rhi::CommandList* cmd, const rhi::Transient& fc, rh
     rp.depth.readOnly = true;
     cmd->beginRenderPass(rp);
     cmd->setFrameConstants(fc);
+    if (!physical_.empty()) {
+        cmd->setPipeline(physicalPipe_.get());
+        const BallPush p{0, tr.buffer->srv(), uint32_t(tr.offset + (dust_.size()+instances_.size())*sizeof(InstanceGpu)), 0};
+        cmd->pushConstants(&p, sizeof p);
+        cmd->draw(6,uint32_t(physical_.size()));
+    }
     if (!dust_.empty()) {  // dust first (it hides what is behind it), then the glow of the balls
         cmd->setPipeline(dustPipe_.get());
         const BallPush p{0, tr.buffer->srv(), uint32_t(tr.offset), 0};

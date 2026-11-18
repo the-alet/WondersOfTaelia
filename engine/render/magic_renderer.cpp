@@ -59,7 +59,7 @@ bool MagicRenderer::init(rhi::Device* device, std::string* error) {
         w.volume = device->createTexture(d);
         d.name = "magic.flow";
         w.flow = device->createTexture(d);
-        d.format = rhi::Format::R16_FLOAT;
+        d.format = rhi::Format::RG16_FLOAT;
         d.name = "magic.held";
         w.held = device->createTexture(d);
         if (!w.volume || !w.flow || !w.held) {
@@ -69,7 +69,7 @@ bool MagicRenderer::init(rhi::Device* device, std::string* error) {
     }
     texels_.assign(size_t(kSide) * kSide * kLayers * 4, 0);
     flowTexels_.assign(texels_.size(), 0);
-    heldTexels_.assign(size_t(kSide) * kSide * kLayers, 0);
+    heldTexels_.assign(size_t(kSide) * kSide * kLayers * 2, 0);
     return true;
 }
 
@@ -109,13 +109,23 @@ void MagicRenderer::update(const MagicField* field, const dvec3& camera) {
                     float rgb[3] = {0, 0, 0}, total = 0, u[3] = {0, 0, 0}, air = 0;
                     // What the things hold: the ground holds what its lowest cell does, so its surface reads it whole.
                     const int ch = int(std::clamp<int64_t>(local, 0, v.layers - 1)) * cols + slot;
-                    heldTexels_[size_t(k) * kSide * kSide + size_t(j) * kSide + i] = toHalf(v.state[size_t(MagicField::kNecroticHeld) * cells + ch]);
+                    const size_t heldIndex = (size_t(k) * kSide * kSide + size_t(j) * kSide + i) * 2;
+                    const float stain = std::max(v.state[size_t(MagicField::kNecroticHeld) * cells + ch],
+                                                 v.state[size_t(Aspect::Necrotic) * cells + ch] * 0.65f);
+                    heldTexels_[heldIndex] = toHalf(stain);
+                    heldTexels_[heldIndex + 1] = toHalf(v.state[size_t(MagicField::kGrassDamage) * cells + slot]);
                     if (local >= 0) {
                         const int c = int(std::min<int64_t>(local, v.layers - 1)) * cols + slot;
                         for (int a = 0; a < kAspects; ++a) {
                             const float rho = v.state[size_t(a) * cells + c];
                             float col[3];
                             aspectColor(a, rho, col);
+                            if (a == int(Aspect::Earth) || a == int(Aspect::Water) || a == int(Aspect::Air) || a == int(Aspect::Fire)) {
+                                const float necro = v.state[size_t(Aspect::Necrotic)*cells+c];
+                                const float tint = necro / (necro + float(k::MAGIC_NECROTIC_TINT));
+                                const float lum = col[0]*0.2126f+col[1]*0.7152f+col[2]*0.0722f;
+                                for (int e=0;e<3;++e) col[e] = col[e]*(1-tint)+float(k::MAGIC_COLOR_NECROTIC[e])*lum*2.8f*tint;
+                            }
                             for (int e = 0; e < 3; ++e) rgb[e] += col[e] * rho;
                             total += rho;
                         }

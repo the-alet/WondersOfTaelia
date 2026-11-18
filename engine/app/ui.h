@@ -31,6 +31,10 @@ public:
     int mainTab = 0;  // 0 graphics, 1 controls
     bool playerMode = true;          // the camera rides the player (else the free camera of the checks)
     int ballAspect = 3;              // the magic ball's aspect (number keys)
+    double wallFps = 0.0, wallFrameMs = 0.0;
+    uint32_t outputWidth = 0, outputHeight = 0;
+    bool automatedRun = false;
+    std::string activeDlss = "Off";
 
 private:
     void* hwnd_ = nullptr;

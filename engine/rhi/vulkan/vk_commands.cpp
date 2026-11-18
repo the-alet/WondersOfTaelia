@@ -237,6 +237,8 @@ void VkCmd::copyTexture(Texture* dst, Texture* src) {
 }
 
 void VkCmd::beginMarker(const char* name) {
+    if (dev_->profile_.enabled())
+        dev_->timestamp(dev_->profile_.begin(uint32_t(dev_->frameNumber_ % kFramesInFlight), name));
     if (!dev_->debugUtils_) return;
     VkDebugUtilsLabelEXT l{VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT};
     l.pLabelName = name;
@@ -245,6 +247,8 @@ void VkCmd::beginMarker(const char* name) {
 
 void VkCmd::endMarker() {
     if (dev_->debugUtils_) vkCmdEndDebugUtilsLabelEXT(cb);
+    if (dev_->profile_.enabled())
+        dev_->timestamp(dev_->profile_.end(uint32_t(dev_->frameNumber_ % kFramesInFlight)));
 }
 
 }  // namespace taelia::rhi::vk

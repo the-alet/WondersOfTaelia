@@ -371,9 +371,10 @@ void Renderer::fireFrameData(gpu::FrameConstants& fc, const RenderView& v) {
     std::vector<RenderSpot> spots = v.burning;
     if (v.magic)
         for (const Flame& f : v.magic->flames()) spots.push_back({f.position, std::min(f.strength / 20.0, 1.5)});
+    std::erase_if(spots, [](const RenderSpot& s) { return s.strength <= 0.01; });
     nearestFirst(spots);
-    for (size_t i = 0; i < 3; ++i) fc.flames[i] = {0, 0, 0, 0};
-    for (size_t i = 0; i < spots.size() && i < 3; ++i) put(fc.flames[i], spots[i], spots[i].strength);
+    for (size_t i = 0; i < k::FIRE_VISIBLE_SOURCES; ++i) fc.flames[i] = {0, 0, 0, 0};
+    for (size_t i = 0; i < spots.size() && i < k::FIRE_VISIBLE_SOURCES; ++i) put(fc.flames[i], spots[i], spots[i].strength);
     // Steam: hot spots over water, gathered into columns (each within 5 m of the first spot it joins).
     spots = v.steam;
     nearestFirst(spots);

@@ -50,9 +50,9 @@ void controlsTable() {
         {"C or Ctrl", "Crouch; in flight, sink"},
         {"Shift", "Dash"},
         {"F", "Fly / stop flying (deep water: it swims)"},
-        {"1 .. 8", "Magic: earth, water, life, fire, air, lightning, light, necrotic"},
+        {"1 .. 7", "Magic: earth, water, life, fire, air, light, necrotic"},
         {"LMB", "Hold: gather a ball of it between the hands (from neutral magic slower); let go: throw"},
-        {"V", "Third / first person"},
+        {"RMB", "Hold to draw within 3 m; completes at 1 s; over 5 s is unstable, 8 s breaks (density 0 to 50; seal 150)"},
         {"+ / -", "Time speed (x1/50 .. x50)"},
         {"M", "Magic view"},
         {"/", "World settings"},
@@ -125,18 +125,22 @@ UiActions Ui::build(World& world, GraphicsSettings& settings, const std::string&
         ImGui::Text("Day %lld   %02d:%02d:%02d   %s", static_cast<long long>(t.day + 1), t.hour, t.minute, t.second, speedText);
         const WorldSettings& ws = world.settings();
         ImGui::Text("Wind %.1f m/s from %s", ws.windSpeed, compass(ws.windFromDeg));
+        ImGui::Text("%s  %.1f FPS  %.2f ms  %s  %ux%u  DLSS %s", automatedRun ? "Automated" : "Measured",
+                    wallFps, wallFrameMs, activeApi.c_str(), outputWidth, outputHeight, activeDlss.c_str());
+        if (speed >= 1.0) ImGui::Text("Time scale x%g  balls %zu  runes %zu", speed, world.magicBalls().size() + (world.gathering().kg > 0.0 ? 1u : 0u), world.runes().size());
+        else ImGui::Text("Time scale x1/%g  balls %zu  runes %zu", std::round(1.0 / speed), world.magicBalls().size() + (world.gathering().kg > 0.0 ? 1u : 0u), world.runes().size());
         // The magic at the camera by aspect, kg/m3.
         const MagicSample m = world.magicAt(world.focus());
         ImGui::Text("Magic  earth %.2f  water %.2f  life %.2f  fire %.2f", m.rho[Aspect::Earth], m.rho[Aspect::Water],
                     m.rho[Aspect::Life], m.rho[Aspect::Fire]);
-        ImGui::Text("       air %.2f  lightning %.2f  light %.2f  necrotic %.2f  neutral %.2f  kg/m3", m.rho[Aspect::Air],
-                    m.rho[Aspect::Lightning], m.rho[Aspect::Light], m.rho[Aspect::Necrotic], m.rho[Aspect::Neutral]);
+        ImGui::Text("       air %.2f  light %.2f  necrotic %.2f  neutral %.2f  kg/m3", m.rho[Aspect::Air],
+                    m.rho[Aspect::Light], m.rho[Aspect::Necrotic], m.rho[Aspect::Neutral]);
         if (playerMode) {
             const MagicBall& b = world.gathering();
             if (b.kg > 0.0)
-                ImGui::Text("Ball: %s (1-8)   gathering %.0f%%  %.0f kg", aspectName(b.aspect), 100.0 * b.fill(), b.kg);
+                ImGui::Text("Ball: %s (1-7)   gathering %.0f%%  %.0f kg", aspectName(b.aspect), 100.0 * b.fill(), b.kg);
             else
-                ImGui::Text("Ball: %s (1-8)   hold LMB to gather", aspectName(Aspect(ballAspect)));
+                ImGui::Text("Ball: %s (1-7)   hold LMB to gather", aspectName(Aspect(ballAspect)));
         }
         ImGui::End();
     }

@@ -42,6 +42,7 @@ def main():
         png = out / f"{a.name}_{api}.png"
         cmd = [str(exe), f"--api={api}", f"--shot={png}"] + game_flags
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=a.timeout)
+        png.with_suffix(".log").write_text(r.stdout + r.stderr, encoding="utf-8")
         log = (r.stdout + r.stderr).strip().splitlines()
         if r.returncode != 0 or not png.exists():
             failed = True

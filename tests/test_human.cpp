@@ -176,13 +176,15 @@ TEST(human_runs_crouches_swims_flies_and_gathers_a_ball) {
     bodyBox(humanPose(tread), lo, hi);
     CHECK(hi.y > 0.15);  // the head above the water
     CHECK(hi.y < 0.6);
-    // Gathering: the ball sits in front of its chest, between its hands.
+    // Gathering: the ball sits ahead of the upper chest and below the eyes, visible in first person.
     HumanMotion form;
     form.form = 1.0;
     form.ball = 1.0;
     const dvec3 ball = humanBallPoint(form);
     CHECK(ball.z > 0.2);
-    CHECK(ball.y > 1.0 && ball.y < 1.45);
+    const dvec3 eyes = humanEyes(humanPose(form));
+    CHECK(ball.y > 1.3 && ball.y < eyes.y);
+    CHECK(ball.z - eyes.z > k::MAGIC_BALL_RADIUS);
     // First person: the head is shrunk to a point.
     HumanPose fp = humanPose(stand);
     hideHumanHead(fp);

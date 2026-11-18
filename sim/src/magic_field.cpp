@@ -154,6 +154,7 @@ void MagicField::Impl::fillColumns(int l, const std::vector<int>& slots) {
                 L.st[L.at(kTheta, c)] = float(from.theta);
                 L.st[L.at(kAirT, c)] = float(from.airT);
                 L.st[L.at(kNecroticHeld, c)] = float(from.necroticHeld);
+                L.st[L.at(kGrassDamage, c)] = float(from.grassDamage);
             } else {
                 const dvec3 u = airAt(p, std::max(p.y - col.surface(), 0.0));
                 for (int a = 0; a < kA; ++a) L.st[L.at(a, c)] = b.rho[a];
@@ -163,6 +164,7 @@ void MagicField::Impl::fillColumns(int l, const std::vector<int>& slots) {
                 L.st[L.at(kTheta, c)] = float(magic::theta0());
                 L.st[L.at(kAirT, c)] = 0.0f;
                 L.st[L.at(kNecroticHeld, c)] = 0.0f;
+                L.st[L.at(kGrassDamage, c)] = 0.0f;
             }
         }
     });
@@ -261,6 +263,7 @@ void MagicField::Impl::refreshGhosts(int l) {
                 L.gv[L.gat(kTheta, i)] = float(s.theta);
                 L.gv[L.gat(kAirT, i)] = float(s.airT);
                 L.gv[L.gat(kNecroticHeld, i)] = float(s.necroticHeld);
+                L.gv[L.gat(kGrassDamage, i)] = float(s.grassDamage);
             } else {
                 const dvec3 u = wind ? wind->meanAt(std::max(p.y - L.gGround[size_t(i)], 0.0)) : dvec3{};
                 for (int a = 0; a < kA; ++a) L.gv[L.gat(a, i)] = L.gBase[L.gat(a, i)];
@@ -270,6 +273,7 @@ void MagicField::Impl::refreshGhosts(int l) {
                 L.gv[L.gat(kTheta, i)] = float(magic::theta0());
                 L.gv[L.gat(kAirT, i)] = 0.0f;
                 L.gv[L.gat(kNecroticHeld, i)] = 0.0f;
+                L.gv[L.gat(kGrassDamage, i)] = 0.0f;
             }
         }
     });
@@ -373,6 +377,7 @@ MagicSample MagicField::Impl::sampleLevel(int l, const dvec3& p, bool fromBase) 
     out.theta = acc[kTheta];
     out.airT = acc[kAirT];
     out.necroticHeld = acc[kNecroticHeld];
+    out.grassDamage = acc[kGrassDamage];
     out.level = l;
     return out;
 }
@@ -565,6 +570,26 @@ bool MagicField::addMass(const dvec3& p, Aspect a, double kg) {
         const Level& L = impl_->lv[l];
         if (L.find(int64_t(std::floor(p.x / L.dx)), int64_t(std::floor(p.z / L.dx)), int64_t(std::floor(p.y / L.dy))) >= 0)
             return addDensity(p, a, kg / (L.dx * L.dx * L.dy));
+    }
+    return false;
+}
+
+bool MagicField::addMovingMass(const dvec3& p, Aspect a, double kg, const dvec3& velocity) {
+    if (!(kg > 0)) return false;
+    for (int l = 0; l < impl_->levels; ++l) {
+        Level& L = impl_->lv[l];
+        const int c = L.find(int64_t(std::floor(p.x / L.dx)), int64_t(std::floor(p.z / L.dx)), int64_t(std::floor(p.y / L.dy)));
+        if (c < 0) continue;
+        double rho = 0;
+        for (int i = 0; i < kAspects; ++i) rho += L.st[L.at(i, c)];
+        const double mass = rho * L.dx * L.dx * L.dy;
+        const double v[] = {velocity.x, velocity.y, velocity.z};
+        for (int i = 0; i < 3; ++i)
+            L.st[L.at(kAspects + i, c)] = float((L.st[L.at(kAspects + i, c)] * mass + v[i] * kg) / (mass + kg));
+        L.st[L.at(int(a), c)] += float(kg / (L.dx * L.dx * L.dy));
+        L.deviation[size_t(L.brickOf(c))] = 1e9f;
+        ++L.version;
+        return true;
     }
     return false;
 }

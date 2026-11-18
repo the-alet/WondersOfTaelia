@@ -195,6 +195,48 @@ int main(int argc, char** argv) {
     // A second readback must still work (state restored).
     if (!dev->readbackRGBA8(rt.get(), px)) ++g_fail;
 
+    // ---- Front/back culling contract, including the inverted front-face convention.
+    // In our NDC (+y up), these indices become clockwise on the left and counter-clockwise on the right.
+    const float faceVertices[] = {-1,-1, 0,-1, 0,1, -1,1, 0,-1, 1,-1, 1,1, 0,1};
+    const uint16_t faceIndices[] = {0,2,1, 0,3,2, 4,5,6, 4,6,7};
+    auto faceVb = dev->createBuffer({sizeof faceVertices, rhi::BufferUsage::Storage, rhi::Memory::GpuOnly, "cull.vertices"}, faceVertices);
+    auto faceIb = dev->createBuffer({sizeof faceIndices, rhi::BufferUsage::Index, rhi::Memory::GpuOnly, "cull.indices"}, faceIndices);
+    for (bool ccw : {false, true}) for (rhi::Cull cull : {rhi::Cull::Back, rhi::Cull::Front}) {
+        rhi::GraphicsPipelineDesc cgp = gp;
+        cgp.frontCounterClockwise = ccw;
+        cgp.cull = cull;
+        cgp.name = "cull contract";
+        auto cpipe = dev->createGraphicsPipeline(cgp, &err);
+        if (!cpipe || !faceVb || !faceIb) { ++g_fail; continue; }
+        auto* cmd = dev->beginFrame(nullptr);
+        cmd->barrier(rt.get(), rhi::State::RenderTarget);
+        cmd->barrier(depth.get(), rhi::State::DepthWrite);
+        rhi::RenderPass pass;
+        pass.colorCount = 1;
+        pass.color[0].texture = rt.get();
+        pass.color[0].load = rhi::LoadOp::Clear;
+        pass.color[0].clear[3] = 1;
+        pass.depth.texture = depth.get();
+        pass.depth.load = rhi::LoadOp::Clear;
+        cmd->beginRenderPass(pass);
+        cmd->setPipeline(cpipe.get());
+        Push cp = push;
+        cp.mode = 1;
+        cp.vertexBuffer = faceVb->srv();
+        cmd->pushConstants(&cp, sizeof cp);
+        cmd->setIndexBuffer(faceIb.get(), 0, rhi::IndexType::U16);
+        cmd->drawIndexed(12);
+        cmd->endRenderPass();
+        dev->endFrame(nullptr);
+        dev->waitIdle();
+        const bool leftVisible = ccw == (cull == rhi::Cull::Front);
+        const int black[4] = {0,0,0,255};
+        if (!dev->readbackRGBA8(rt.get(), px)) { ++g_fail; continue; }
+        std::printf("  culling %s, front=%s\n", cull == rhi::Cull::Back ? "back" : "front", ccw ? "CCW" : "CW");
+        expectPixel(px, W, 16, 32, leftVisible ? left : black, "CW face");
+        expectPixel(px, W, 48, 32, leftVisible ? black : left, "CCW face");
+    }
+
     // ---- Ray queries, GPU-written indirect arguments, indirect dispatch and draw.
     if (!dev->rayTracingSupported()) {
         std::printf("  ray tracing NOT supported\n");

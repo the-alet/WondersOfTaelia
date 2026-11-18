@@ -5,12 +5,16 @@
 
 #ifdef __cplusplus
 #include <cstdint>
+#include "taelia/shared_constants.h"
+#define TAELIA_FLAME_SLOTS ::taelia::k::FIRE_VISIBLE_SOURCES
 namespace taelia::gpu {
 struct float4 { float x, y, z, w; };
 struct uint4 { uint32_t x, y, z, w; };
 struct float4x4 { float m[16]; };  // row-major in memory; HLSL reads it with row_major
 #define TAELIA_ROW_MAJOR
 #else
+#include "shared_constants.hlsli"
+#define TAELIA_FLAME_SLOTS K_FIRE_VISIBLE_SOURCES
 #define TAELIA_ROW_MAJOR row_major
 #endif
 
@@ -57,7 +61,7 @@ struct FrameConstants {
     uint4 magicVolume;      // bindless: x L0 volume, y L1 volume (rgb: colour x density, a: total density, kg/m3); z L0 flow, w L1 flow (xyz: m/s, w: air magic, kg/m3)
     float4 fire;            // the campfire: xyz its bed relative to the camera (m), w: how strongly it burns (0: out)
     float4 fireInfo;        // x: seconds (wrapped hourly), yz: the wind 2 m up (m/s, x and z), w: unused
-    float4 flames[3];       // fire condensed elsewhere: xyz relative to the camera (m), w strength like the campfire's (0: none)
+    float4 flames[TAELIA_FLAME_SLOTS]; // nearby fires: xyz relative to camera, w strength (0: none)
     float4 denseLo;         // magic past the dew point: its box relative to the camera (xyz), w 1 if there is any
     float4 denseHi;
     float4 weather;         // x: rain here (0..1), y: storm (0..1), z: lightning flash (0..1), w: unused
@@ -65,7 +69,7 @@ struct FrameConstants {
     float4 steam[2];        // steam where fire past the dew point meets water: xyz its base on the surface relative to the camera (m), w strength (0: none)
     float4 scorch[8];       // grass burnt away: xyz the circle's centre on the ground relative to the camera (m), w its radius (0: none)
     float4 underwater;      // x: 1 if the eye is under a pond's surface, y: how far that surface is above it (m), zw: unused
-    uint4 magicHeld;        // bindless: x L0, y L1: the necrotic magic the things in each cell hold (R16F, kg/m3; it tints them), zw: unused
+    uint4 magicHeld;        // bindless L0/L1 RG16F: necrotic stain density, persistent grass damage; zw unused
     float4 dents;           // the ground's dents round the eye: xy the window's min corner relative to the camera (x, z; m), z its size (m), w its texture (bindless, as bits; 0 none)
 };
 
@@ -84,4 +88,5 @@ static_assert(sizeof(TerrainNode) == 32, "terrain.hlsl reads 32-byte nodes");
 #endif
 
 #undef TAELIA_ROW_MAJOR
+#undef TAELIA_FLAME_SLOTS
 #endif

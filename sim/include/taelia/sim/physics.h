@@ -69,6 +69,7 @@ public:
     uint32_t throwBall(const dvec3& from, const dvec3& velocity);
     // A ball that fell apart (or was taken away). False if there is none by that id.
     bool removeBall(uint32_t id);
+    bool impulseBall(uint32_t id, const dvec3& impulse); // kg m/s from a dense magic contact; wakes the body
     // Rocks the world grew (minerals): solid balls bounce off. Ids are the world's.
     void addRock(uint32_t id, const dvec3& position, double radius);
     void removeRock(uint32_t id);

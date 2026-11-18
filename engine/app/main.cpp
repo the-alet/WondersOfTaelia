@@ -100,7 +100,7 @@ private:
     Ui ui_;
     bool magicView_ = false;
     bool automated_ = false;
-    bool playerMode_ = true, firstPerson_ = false;
+    bool playerMode_ = true;
     int aspect_ = int(Aspect::Fire);
     double actYaw_ = 0;
     int appliedDetail_ = -1;
@@ -108,6 +108,11 @@ private:
     bool charging_ = false;
     bool injected_ = false;
     std::chrono::steady_clock::time_point chargeStart_;
+    uint32_t chargingRune_ = 0;
+    double runeChargeSeconds_ = 0.0;
+    std::chrono::steady_clock::time_point runeChargeSample_;
+    std::chrono::steady_clock::time_point hudSample_;
+    double smoothedFrameSeconds_ = 0.0;
     dvec3 cameraVelocity_, lastCameraPos_;  // m/s, from the rig's last move
     std::vector<BallPose> ballPoses_;
 };
@@ -139,11 +144,10 @@ void App::handleKeys() {
     if (w.keyPressed(VK_OEM_MINUS) || w.keyPressed(VK_SUBTRACT)) world_->clock().slower();
     if (w.keyPressed('M')) magicView_ = !magicView_;
     if (playerMode_) {
-        static const int kKeys[8] = {int(Aspect::Earth), int(Aspect::Water), int(Aspect::Life), int(Aspect::Fire),
-                                     int(Aspect::Air), int(Aspect::Lightning), int(Aspect::Light), int(Aspect::Necrotic)};
-        for (int i = 0; i < 8; ++i)
+        static const int kKeys[7] = {int(Aspect::Earth), int(Aspect::Water), int(Aspect::Life), int(Aspect::Fire),
+                                     int(Aspect::Air), int(Aspect::Light), int(Aspect::Necrotic)};
+        for (int i = 0; i < 7; ++i)
             if (w.keyPressed('1' + i) || w.keyPressed(VK_NUMPAD1 + i)) aspect_ = kKeys[i];
-        if (w.keyPressed('V')) firstPerson_ = !firstPerson_;
     }
 }
 
@@ -177,47 +181,22 @@ PlayerInput App::playerInput(const LaunchFlags& f) {
         in.fly = w.keyPressed('F');
         in.gather = w.mouseDown(0);
     }
-    in.face = firstPerson_ || in.gather || world_->player().toss >= 0.0;
+    in.face = true;
     in.aim = aimPoint();
     return in;
 }
 
 dvec3 App::aimPoint() const {
-    // The ground under the eye's focus (or far along it).
+    // The first surface under the gaze, including branches and carriers; otherwise far along that same ray.
     const dvec3 from = rig_.position, dir = rig_.gazeDirection();
-    double prev = 0;
-    for (double t = 0.5; t <= 150.0; t += 0.5) {
-        const dvec3 p = from + dir * t;
-        if (p.y <= world_->groundHeight(p.x, p.z)) {
-            double lo = prev, hi = t;
-            for (int i = 0; i < 12; ++i) {
-                const double mid = 0.5 * (lo + hi);
-                const dvec3 q = from + dir * mid;
-                (q.y <= world_->groundHeight(q.x, q.z) ? hi : lo) = mid;
-            }
-            return from + dir * hi;
-        }
-        prev = t;
-    }
-    return from + dir * 150.0;
+    const dvec3 end = from + dir * 150.0;
+    SurfaceHit hit;
+    return world_->traceEnvironment(from, end, 0, hit) ? hit.point : end;
 }
 
-void App::placePlayerCamera(const LaunchFlags& f) {
+void App::placePlayerCamera(const LaunchFlags&) {
     const Player& p = world_->player();
-    if (automated_ && f.playerCamera) {  // checks: from round it, looking at its middle
-        const double mid = p.mode == PlayerMode::Swim ? -0.1 : 1.0 - 0.3 * p.crouch;
-        const dvec3 pivot = p.position + dvec3{0, mid, 0};
-        const double yaw = p.yaw + f.playerCamera->yawDeg * kDegToRad, pitch = f.playerCamera->pitchDeg * kDegToRad;
-        const dvec3 cam = pivot + directionFromAngles(yaw, pitch) * f.playerCamera->distance;
-        const dvec3 look = normalize(pivot - cam);
-        rig_.place(cam, std::atan2(look.x, look.z), std::asin(std::clamp(look.y, -1.0, 1.0)));
-        return;
-    }
-    if (firstPerson_) {
-        rig_.position = playerEyes(p, humanPose(world_->humanMotion()));
-        return;
-    }
-    rig_.position = playerCamera(p, world_->terrain(), rig_.yaw, rig_.pitch);
+    rig_.position = playerEyes(p, humanPose(world_->humanMotion()));
 }
 
 void App::throwFromHand(const dvec3& velocity) {
@@ -296,12 +275,20 @@ RenderView App::makeView(double aspect, double realSeconds) const {
     v.humanWater = world_->humanWater() / k::HUMAN_WATER;
     v.humanMotion = world_->humanMotion();
     for (const World::Dust& d : world_->dust()) v.dust.push_back({d.position, d.radius, d.age});
-    v.humanFirstPerson = playerMode_ && firstPerson_;
-    auto addBall = [&](const MagicBall& b) { v.magicBalls.push_back({b.position, b.radius(), b.fill(), int(b.aspect), b.id}); };
+    v.humanFirstPerson = playerMode_;
+    auto addBall = [&](const MagicBall& b) { v.magicBalls.push_back({b.position, b.radius(), b.fill(), int(b.aspect), b.id, b.instability()}); };
     if (world_->gathering().kg > 0.0) addBall(world_->gathering());
     for (const MagicBall& b : world_->magicBalls()) addBall(b);
+    for (const MagicImpact& impact : world_->magicImpacts())
+        v.magicBalls.push_back({impact.position,impact.radius,1,int(impact.aspect),impact.id,0,false,impact.age,impact.normal});
+    uint32_t manifestationId = 1000000;
+    for (const PhysicalManifest& m : world_->physicalManifestations()) {
+        if (m.aspect == Aspect::Fire) v.burning.push_back({m.position,0.16 * std::max(1.0-m.age/5.0,0.0)});
+        else if (m.aspect == Aspect::Light) v.magicBalls.push_back({m.position,m.radius,0.3,int(m.aspect),manifestationId++,0,false});
+        else v.magicBalls.push_back({m.position,m.radius,1,int(m.aspect),manifestationId++,0,true});
+    }
     for (const World::BurningTree& b : world_->burningTrees()) {
-        v.burning.push_back({b.position, b.strength});
+        if (b.strength > 0.01) v.burning.push_back({b.firePosition, b.strength});
         v.charring.burning.push_back({{int64_t(std::floor(b.position.x / kTreeCell)), int64_t(std::floor(b.position.z / kTreeCell))}, float(b.burnt)});
     }
     v.rain = world_->rainAt(v.cameraPos);
@@ -333,7 +320,6 @@ int App::run(const LaunchFlags& f) {
     world_ = std::make_unique<World>(wd);
     world_->clock().setTimeSpeed(f.timeSpeed);
     playerMode_ = !f.camera.has_value();
-    firstPerson_ = f.firstPerson;
     aspect_ = f.aspect;
     if (f.player) {
         actYaw_ = f.player->yawDeg * kDegToRad;
@@ -356,6 +342,7 @@ int App::run(const LaunchFlags& f) {
     rhi::DeviceDesc dd;
     dd.api = api == "vulkan" ? rhi::Api::Vulkan : rhi::Api::D3D12;
     dd.debug = f.gpuDebug;
+    dd.gpuProfile = f.gpuProfile;
     dd.shaderDir = (dir_ / "shaders").string();
     dd.streamline = true;  // DLSS and Reflex when the GPU and the DLLs allow
     std::string err;
@@ -407,6 +394,7 @@ int App::run(const LaunchFlags& f) {
     using clock = std::chrono::steady_clock;
     auto last = clock::now();
     const auto start = last;
+    hudSample_ = last;
     int exitCode = 0;
     for (;;) {
         // Reflex: wait here for the right moment to start the frame, then mark the work.
@@ -435,10 +423,19 @@ int App::run(const LaunchFlags& f) {
                 window_.setMouseCaptured(window_.focused() && ui_.menu == Menu::None);
             }
         }
+        const auto hudNow = clock::now();
+        const double wallDt = std::chrono::duration<double>(hudNow - hudSample_).count();
+        hudSample_ = hudNow;
+        if (wallDt > 0.0) smoothedFrameSeconds_ = smoothedFrameSeconds_ == 0.0 ? wallDt : smoothedFrameSeconds_ * 0.9 + wallDt * 0.1;
         const double aspect = double(outW) / double(outH);
         const double realSeconds = automated ? frame_ * (1.0 / 60.0) : std::chrono::duration<double>(clock::now() - start).count();
 
         if (automated && f.throws > 0) scriptedThrows(f);
+        if (automated) for (const auto& shot : f.magicShots) if (frame_ == shot.frame) {
+            const TerrainSample s = world_->terrain().sample(shot.x,shot.z);
+            world_->throwMagicBall({shot.x,(s.underwater()?s.waterLevel:s.height)+shot.y,shot.z},
+                                  {shot.vx,shot.vy,shot.vz},Aspect(shot.aspect),shot.kg);
+        }
         // --inject: dense magic for checks, once the field runs.
         if (!injected_ && world_->magic().started()) {
             for (const LaunchFlags::Injection& in : f.injects) {
@@ -460,6 +457,21 @@ int App::run(const LaunchFlags& f) {
         world_->advance(dt);
         device_->latencyMarker(rhi::LatencyMarker::SimulationEnd);
         if (playerMode_) placePlayerCamera(f);
+        const bool drawHeld = playerMode_ && (automated ? (f.act == "draw-rune" && frame_ >= 2 && frame_ < uint64_t(f.frames))
+                                                        : (window_.mouseCaptured() && ui_.menu == Menu::None && window_.mouseDown(1)));
+        if (drawHeld && chargingRune_ == 0) {
+            chargingRune_ = world_->drawRune(rig_.position, rig_.gazeDirection(), Aspect(aspect_));
+            runeChargeSeconds_ = 0.0;
+            runeChargeSample_ = clock::now();
+        }
+        if (chargingRune_ != 0) {
+            const auto now = clock::now();
+            if (drawHeld) runeChargeSeconds_ += automated ? 1.0 / 60.0 : std::chrono::duration<double>(now - runeChargeSample_).count();
+            runeChargeSample_ = now;
+            const bool finishRune = !drawHeld; // automated checks capture the held state, including instability
+            world_->chargeRune(chargingRune_, runeChargeSeconds_, finishRune);
+            if (finishRune) chargingRune_ = 0;
+        }
         if (frame_ > 0 && dt > 0) cameraVelocity_ = (rig_.position - lastCameraPos_) * (1.0 / dt);
         lastCameraPos_ = rig_.position;
         world_->ballPoses(ballPoses_);
@@ -467,6 +479,13 @@ int App::run(const LaunchFlags& f) {
         // In automated runs the UI is laid out at the frame size; it never reads the real mouse.
         ui_.playerMode = playerMode_;
         ui_.ballAspect = aspect_;
+        ui_.wallFrameMs = smoothedFrameSeconds_ * 1000.0;
+        ui_.wallFps = smoothedFrameSeconds_ > 0.0 ? 1.0 / smoothedFrameSeconds_ : 0.0;
+        ui_.outputWidth = outW;
+        ui_.outputHeight = outH;
+        ui_.automatedRun = automated;
+        static const char* const dlssModes[] = {"Off", "DLAA", "Quality", "Balanced", "Performance", "Ultra"};
+        ui_.activeDlss = settings_.upscaler >= 0 && settings_.upscaler < 6 ? dlssModes[settings_.upscaler] : "Off";
         ui_.newFrame(outW, outH, dt, automated || window_.mouseCaptured());
         UiActions act = ui_.build(*world_, settings_, api, !f.noUi, device_->upscalerSupported(), device_->latencySupported());
         if (f.noUi) ui_.menu = Menu::None;

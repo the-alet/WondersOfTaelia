@@ -201,7 +201,7 @@ dvec3 solveTwoBone(const dvec3& a, const dvec3& target, double l1, double l2, co
 }
 
 // The ball between the hands, round the chest at rest (the arms' targets follow the chest).
-const dvec3 kBallRest{0.0, 1.22, 0.34};
+const dvec3 kBallRest{k::MAGIC_BALL_HAND_POINT[0], k::MAGIC_BALL_HAND_POINT[1], k::MAGIC_BALL_HAND_POINT[2]};
 
 double ballRadius(double fill) { return k::MAGIC_BALL_RADIUS * std::cbrt(std::clamp(fill, 0.04, 1.0)); }
 

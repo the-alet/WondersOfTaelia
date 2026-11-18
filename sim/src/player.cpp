@@ -129,6 +129,43 @@ void stepPlayer(Player& p, const PlayerInput& in, const Terrain& terrain, const 
             p.velocity.z -= nrm.z * into;
         }
     }
+<<<<<<< Updated upstream
+=======
+    // Blocks: out of each to the nearest side (in its own frame), sliding along it.
+    for (const PlayerObstacle& b : blocks) {
+        if (next.y > b.centre.y + b.half.y || next.y + 1.8 < b.centre.y - b.half.y) continue;
+        const double c = std::cos(b.yaw), s = std::sin(b.yaw);
+        const double dx = next.x - b.centre.x, dz = next.z - b.centre.z;
+        const double lx = dx * c - dz * s, lz = dx * s + dz * c;  // into its frame (+z its front)
+        double qx = std::clamp(lx, -b.half.x, b.half.x), qz = std::clamp(lz, -b.half.z, b.half.z);
+        double ox = lx - qx, oz = lz - qz, dist = std::hypot(ox, oz);
+        if (dist >= k::PLAYER_RADIUS) continue;
+        if (dist < 1e-9) {  // inside: out through the nearest side
+            const double ex = b.half.x - std::fabs(lx), ez = b.half.z - std::fabs(lz);
+            if (ex < ez) {
+                ox = lx >= 0 ? 1.0 : -1.0;
+                oz = 0.0;
+                qx = ox * b.half.x;
+            } else {
+                ox = 0.0;
+                oz = lz >= 0 ? 1.0 : -1.0;
+                qz = oz * b.half.z;
+            }
+        } else {
+            ox /= dist;
+            oz /= dist;
+        }
+        const double px = qx + ox * k::PLAYER_RADIUS, pz = qz + oz * k::PLAYER_RADIUS;
+        next.x = b.centre.x + px * c + pz * s;
+        next.z = b.centre.z - px * s + pz * c;
+        const double nx = ox * c + oz * s, nz = -ox * s + oz * c;  // the push, back in the world
+        const double into = p.velocity.x * nx + p.velocity.z * nz;
+        if (into < 0) {
+            p.velocity.x -= nx * into;
+            p.velocity.z -= nz * into;
+        }
+    }
+>>>>>>> Stashed changes
     const TerrainSample at = terrain.sample(next.x, next.z);
     const double depth = at.underwater() ? at.waterLevel - at.height : 0.0;
     switch (p.mode) {
@@ -231,8 +268,7 @@ dvec3 playerToWorld(const Player& p, const dvec3& m) {
 }
 
 dvec3 playerEyes(const Player& p, const HumanPose& pose) {
-    const dvec3 eyes = humanEyes(pose);
-    return playerToWorld(p, eyes + dvec3{0, 0, 0.07});  // just in front of the face: the eye sees out
+    return playerToWorld(p, humanEyes(pose));
 }
 
 dvec3 playerCamera(const Player& p, const Terrain& terrain, double yaw, double pitch) {

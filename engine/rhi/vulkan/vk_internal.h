@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "rhi/backends.h"
+#include "rhi/gpu_profile.h"
 
 namespace taelia::rhi::vk {
 
@@ -242,8 +243,13 @@ public:
         VkCommandBuffer cb = VK_NULL_HANDLE;
         VkSemaphore acquire = VK_NULL_HANDLE;
         uint64_t timelineValue = 0;
+        VkQueryPool queries = VK_NULL_HANDLE;
     };
     Frame frames_[kFramesInFlight];
+    GpuProfile profile_;
+    uint32_t timestampBits_ = 0;
+    void collectProfile(uint32_t slot);
+    void timestamp(uint32_t query);
     VkSemaphore timeline = VK_NULL_HANDLE;
     uint64_t submitted_ = 0;  // last timeline value signaled by a submit
     uint64_t frameNumber_ = 0;

@@ -347,6 +347,7 @@ struct DeviceDesc {
     // Load NVIDIA Streamline (sl.interposer.dll and its plugins next to the exe, signature verified) for DLSS and
     // Reflex. If it can't load or the GPU can't use it, the device works as usual and reports them unsupported.
     bool streamline = false;
+    std::string gpuProfile;      // optional CSV: fence-delayed GPU timestamps for inclusive command markers
 };
 
 class Device {

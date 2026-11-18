@@ -64,6 +64,8 @@ bool fallsApart(double held);
 // Necrotic magic absorbs life magic at MAGIC_NECROTIC_ABSORB * necrotic * life: what a living thing holds of life
 // magic (kg/m3) after dt among necrotic magic this dense.
 double lifeLeft(double held, double necrotic, double dt);
+double necroticRetention(const MagicDensities& medium);
+void neutralizeLight(MagicDensities& mixture);
 // Fireflies from light magic of this density (SPEC: 3 at 40, one more for every 3 past it; ten merge into a big one).
 int fireflyCount(double light);
 void fireflyGroups(double light, int& big, int& small);

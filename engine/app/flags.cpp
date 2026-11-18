@@ -81,8 +81,40 @@ bool parseFlags(int argc, wchar_t** argv, LaunchFlags& f, std::string& error) {
             int aspect = -1;
             for (int n = 0; n < int(std::size(names)); ++n)
                 if (name == names[n]) aspect = n;
-            if (aspect < 0 || !toList(val.substr(comma + 1), list) || list.size() != 4 || list[3] <= 0) return bad();
+            if (aspect < 0 || aspect == 5 || !toList(val.substr(comma + 1), list) || list.size() != 4 || list[3] <= 0) return bad();
             f.injects.push_back({aspect, list[0], list[1], list[2], list[3]});
+<<<<<<< Updated upstream
+=======
+        } else if (key == "--magic-shot") {
+            static const char* const names[] = {"earth","water","life","fire","air","lightning","light","neutral","necrotic"};
+            const size_t comma = val.find(',');
+            if (comma == std::string::npos) return bad();
+            int aspect = -1;
+            for (int n=0; n<int(std::size(names)); ++n) if (val.substr(0,comma)==names[n]) aspect=n;
+            if (aspect<0 || aspect==5 || !toList(val.substr(comma+1),list) ||
+                (list.size()!=7 && list.size()!=8) || list[3]<=0 || list[3]>240 ||
+                (list.size()==8 && (list[7]<2 || list[7]>1000000))) return bad();
+            f.magicShots.push_back({aspect,list[0],list[1],list[2],list[3],list[4],list[5],list[6],
+                                   list.size()==8 ? uint64_t(list[7]) : 2u});
+        } else if (key == "--rune") {
+            // aspect,material,x,y,z,kg/m3[,yaw]: the aspect and material by name, then where it stands and how full.
+            static const char* const names[] = {"earth", "water", "life", "fire", "air", "lightning", "light", "neutral", "necrotic"};
+            static const char* const mats[] = {"wood", "stone", "metal"};
+            const size_t comma = val.find(',');
+            if (comma == std::string::npos) return bad();
+            const std::string name = val.substr(0, comma);
+            int aspect = -1, material = -1;
+            for (int n = 0; n < int(std::size(names)); ++n)
+                if (name == names[n]) aspect = n;
+            const std::string rest = val.substr(comma + 1);
+            const size_t comma2 = rest.find(',');
+            if (aspect < 0 || aspect == 5 || comma2 == std::string::npos) return bad();
+            const std::string mat = rest.substr(0, comma2);
+            for (int m = 0; m < int(std::size(mats)); ++m)
+                if (mat == mats[m]) material = m;
+            if (material < 0 || !toList(rest.substr(comma2 + 1), list) || list.size() < 4 || list.size() > 5 || list[3] < 0) return bad();
+            f.runes.push_back({aspect, material, list[0], list[1], list[2], list[3], list.size() == 5 ? list[4] : 0.0});
+>>>>>>> Stashed changes
         } else if (key == "--throws") {
             if (!toDouble(val, d) || d < 0) return bad();
             f.throws = int(d);
@@ -97,6 +129,9 @@ bool parseFlags(int argc, wchar_t** argv, LaunchFlags& f, std::string& error) {
             f.api = val;
         } else if (key == "--gpu-debug") {
             f.gpuDebug = true;
+        } else if (key == "--gpu-profile") {
+            if (val.empty()) return bad();
+            f.gpuProfile = val;
         } else if (key == "--size") {
             const size_t x = val.find('x');
             double w = 0, h = 0;
@@ -129,22 +164,23 @@ bool parseFlags(int argc, wchar_t** argv, LaunchFlags& f, std::string& error) {
             if (!toList(val, list) || list.size() != 3) return bad();
             f.player = LaunchFlags::PlayerPlace{list[0], list[1], list[2]};
         } else if (key == "--player-camera") {
-            if (!toList(val, list) || list.size() != 3 || list[2] <= 0) return bad();
-            f.playerCamera = LaunchFlags::Orbit{list[0], list[1], list[2]};
+            error = "--player-camera was removed: gameplay is first-person only";
+            return false;
         } else if (key == "--first-person") {
             f.firstPerson = true;
         } else if (key == "--act") {
-            static const char* const acts[] = {"run", "crouch", "crouchrun", "jump", "dash", "swim", "tread", "fly", "hover", "gather", "throw", "land", "landrun"};
+            static const char* const acts[] = {"run", "crouch", "crouchrun", "jump", "dash", "swim", "tread", "fly", "hover", "gather", "throw", "draw-rune", "land", "landrun"};
             bool known = false;
             for (const char* a : acts) known = known || val == a;
             if (!known) return bad();
             f.act = val;
         } else if (key == "--aspect") {
-            static const char* const names[] = {"earth", "water", "life", "fire", "air", "lightning", "light", "neutral", "necrotic"};
+            static const char* const names[] = {"earth", "water", "life", "fire", "air", "light", "necrotic"};
+            static const int ids[] = {0, 1, 2, 3, 4, 6, 8}; // preserve the reserved lightning and neutral slots
             int aspect = -1;
             for (int n = 0; n < int(std::size(names)); ++n)
-                if (val == names[n]) aspect = n;
-            if (aspect < 0 || aspect == 7) return bad();
+                if (val == names[n]) aspect = ids[n];
+            if (aspect < 0) return bad();
             f.aspect = aspect;
         } else if (key == "--gaze") {
             if (!toList(val, list) || list.size() != 2) return bad();
@@ -154,6 +190,10 @@ bool parseFlags(int argc, wchar_t** argv, LaunchFlags& f, std::string& error) {
             error = "unknown flag " + arg;
             return false;
         }
+    }
+    if (f.camera && !f.automated()) {
+        error = "--camera is only available with --frames for automated free-camera checks";
+        return false;
     }
     return true;
 }

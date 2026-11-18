@@ -33,6 +33,9 @@ constexpr int kLife = int(Aspect::Life), kNecrotic = int(Aspect::Necrotic);
 // Total density, pressure off the baseline, speed of sound, kinematic viscosity, and D per aspect (the mean free path
 // from all the motes, plus the air's molecules capping it in thin magic).
 void MagicField::Impl::derive(const float* rho, double theta, double pBase, float* out) const {
+    MagicDensities medium;
+    for (int a=0;a<kA;++a) medium.rho[a]=rho[a];
+    const double retain = magic::necroticRetention(medium);
     double rhoTot = 0, n = 0;
     for (int a = 0; a < kA; ++a) {
         rhoTot += rho[a];
@@ -46,7 +49,7 @@ void MagicField::Impl::derive(const float* rho, double theta, double pBase, floa
     for (int a = 0; a < kA; ++a) {
         const double v = std::sqrt(3.0 * theta / mass[a]);
         const double lambda = 1.0 / (1.4142135623730951 * sigma[a] * n + v / (3.0 * double(k::MAGIC_D_MAX)));
-        const double D = v * lambda / 3.0;
+        const double D = v * lambda / 3.0 * (a == kNecrotic ? std::sqrt(double(k::NECROTIC_AIR_RETAIN)/retain) : 1.0);
         out[dD + a] = float(D);
         nu += rho[a] * D;
     }
@@ -220,8 +223,6 @@ void MagicField::Impl::tick(int l) {
     for (int m = 0; m < 6; ++m) threshold[m] = float(magic::showThreshold(Aspect(kCondAspect[m])));
     const double thetaKeep = fmath::exp(-dt / double(k::MAGIC_THETA_TAU)), airTKeep = fmath::exp(-dt / double(k::MAGIC_AIR_T_TAU));
     const double theta0 = magic::theta0(), buoyancy = 9.81 / double(k::MAGIC_AIR_T_REF);
-    const double necroticFade = 1.0 - fmath::exp(-dt / double(k::MAGIC_NECROTIC_FADE_TAU));
-    const double heldKeep = fmath::exp(-dt / double(k::MAGIC_HELD_TAU));
 
     const auto forActive = [&](auto&& fn) {
         pool->run(chunks, [&](int ch) {
@@ -310,6 +311,13 @@ void MagicField::Impl::tick(int l) {
                         rho[nat] += 0.5f * drink;
                         rho[kNeutral] += 0.5f * drink;
                     }
+                    MagicDensities mixture;
+                    for (int a=0;a<kA;++a) mixture.rho[a]=rho[a];
+                    const float cleansingLight = rho[int(Aspect::Light)];
+                    magic::neutralizeLight(mixture);
+                    for (int a=0;a<kA;++a) rho[a]=mixture.rho[a];
+                    const double retain = magic::necroticRetention(mixture);
+                    const double necroticFade = 1.0-fmath::exp(-dt/retain);
                     // Necrotic magic slowly absorbs life magic, growing by only MAGIC_NECROTIC_GAIN of what it takes
                     // (the rest goes back to neutral); with too little life round it to feed on, it slowly fades into
                     // neutral.
@@ -350,8 +358,16 @@ void MagicField::Impl::tick(int l) {
                         }
                     }
                     // What the things here hold of necrotic magic evens out with it like any held magic (it tints them).
-                    const float heldNecrotic = L.st[L.at(kNecroticHeld, c)];
+                    // Evaporating light also cancels immediately; the held tint is an exposure history, not extra mass.
+                    for (int a=0;a<kA;++a) mixture.rho[a]=rho[a];
+                    magic::neutralizeLight(mixture);
+                    for (int a=0;a<kA;++a) rho[a]=mixture.rho[a];
+                    const float heldNecrotic = std::max(0.0f, L.st[L.at(kNecroticHeld, c)] - cleansingLight);
+                    const double heldKeep = fmath::exp(-dt/(rho[kNecrotic]>heldNecrotic ? double(k::NECROTIC_STAIN_SECONDS) : retain));
                     L.nx[L.at(kNecroticHeld, c)] = float(rho[kNecrotic] + (heldNecrotic - rho[kNecrotic]) * heldKeep);
+                    const double damage = L.st[L.at(kGrassDamage, c)];
+                    const double exposure = c < L.cols ? double(rho[kNecrotic]) / (1.0 + rho[kNecrotic]) : 0.0;
+                    L.nx[L.at(kGrassDamage, c)] = float(1.0 - (1.0 - damage) * fmath::exp(-exposure * dt / k::NECROTIC_GRASS_SECONDS));
                     for (int a = 0; a < kA; ++a) {
                         L.nx[L.at(a, c)] = rho[a];
                         nTot += rho[a] / mass[a];

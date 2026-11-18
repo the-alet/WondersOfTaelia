@@ -28,10 +28,24 @@ struct LaunchFlags {
         double x = 0, y = 0, z = 0, kg = 0;
     };
     std::vector<Injection> injects;
+<<<<<<< Updated upstream
+=======
+    struct MagicShot { int aspect; double x, y, z, kg, vx, vy, vz; uint64_t frame; };
+    std::vector<MagicShot> magicShots; // automated checks only, height above terrain/water
+    // --rune=aspect,material,x,y,z,kg/m3[,yaw] (repeatable, checks only): stand a rune's carrier there (y is the sign's
+    // centre above the ground; kg/m3 is how dense its aspect is inside at the start, 0 empty; yaw degrees, its front
+    // faces along it). No key does this; SPEC: ask before putting one in the world.
+    struct RuneFlag {
+        int aspect = 0, material = 1;  // stone by default
+        double x = 0, y = 0, z = 0, kg = 0, yawDeg = 0;
+    };
+    std::vector<RuneFlag> runes;
+>>>>>>> Stashed changes
     int frames = 0;                    // --frames=N: automated run
     std::string shot = "shot.png";     // --shot=<file>
     std::optional<std::string> api;    // --api=d3d12|vulkan (else the saved setting)
     bool gpuDebug = false;             // --gpu-debug: D3D12 debug layer / Vulkan validation
+    std::string gpuProfile;            // --gpu-profile=file.csv: GPU timestamps (no present/CPU time)
     uint32_t width = 1920, height = 1080;  // --size=WxH: headless frame size
     uint64_t seed = 1;                 // --seed=N
     bool noUi = false;                 // --no-ui: no overlay or menus in the frame
@@ -40,17 +54,13 @@ struct LaunchFlags {
     std::optional<int> latency;        // --reflex=off|on|boost
     std::string menu;                  // --menu=graphics|controls|world: open a menu (to check it in a frame)
     std::optional<double> gazeX, gazeY;  // --gaze=x,y: the eye's focus on screen, ndc -1..1 (to check the blur)
-    // The player (checks): --camera keeps the free camera; otherwise the camera rides the player.
+    // --camera is reserved for automated free-camera checks.
     struct PlayerPlace {
         double x = 0, z = 0, yawDeg = 0;
     };
     std::optional<PlayerPlace> player;  // --player=x,z,yaw: stand it there (on the ground, or swimming in deep water)
-    struct Orbit {
-        double yawDeg = 0, pitchDeg = 0, distance = 3;
-    };
-    std::optional<Orbit> playerCamera;  // --player-camera=yaw,pitch,dist: look at it from round it (yaw from its facing)
-    bool firstPerson = false;           // --first-person: from its own eyes
-    std::string act;                    // --act=run|crouch|crouchrun|jump|dash|swim|tread|fly|hover|gather|throw|land
+    bool firstPerson = true;            // --first-person retained as a compatibility no-op
+    std::string act;                    // --act=run|crouch|crouchrun|jump|dash|swim|tread|fly|hover|gather|throw|draw-rune|land
     int aspect = 3;                     // --aspect=fire: the magic ball's aspect (gather, throw)
 
     bool automated() const { return frames > 0; }
